@@ -1,0 +1,47 @@
+{
+  "model": "las2_m_crop_nashm",
+  "upstream": "LiteAnyStereo (LAS2-M)",
+  "input_shape": "1x3x480x640",
+  "quantisation": "int16",
+  "march": "nash-m",
+
+  "toolchain": {
+    "openexplorer": "3.7.0",
+    "hbdk": "4.7.5",
+    "board_system": "4.0.5",
+    "note": "Recorded so a future failure can be attributed. The host HBDK and the board HBRT must match; 3.7.0 host pairs with 4.0.5 board."
+  },
+
+  "cosine": {
+    "A": 0.99,
+    "B": 1.0,
+    "C": 0.99
+  },
+
+  "measured": {
+    "note": "Measured on S100P with the crop-calibrated build. Latency is from hrt_model_exec perf on a quiet board — a board with a crashed process leaking VPU/BPU resources reports substantially worse until reboot.",
+    "cosine_vs_fp32": 0.99986,
+    "epe_px": 0.12,
+    "outliers_gt_3px": 0.0,
+    "systematic_bias_px": 0.004,
+    "latency_ms": 14.0,
+    "fps": 71
+  },
+
+  "task_metric": null,
+
+  "rejected_builds": [
+    {
+      "name": "int8 (all)",
+      "epe_px": 1.23,
+      "fps": 174,
+      "why": "Fast, and wrong: ~1px systematic disparity offset plus speckle. soft-argmax accumulates softmax quantisation error rather than cancelling it."
+    },
+    {
+      "name": "mixed precision (cost volume + head int16)",
+      "epe_px": 0.25,
+      "fps": 12,
+      "why": "The counter-intuitive one. Scattered int8/int16 boundaries make requant dominate: 6x SLOWER than quantising everything to int16, for worse accuracy."
+    }
+  ]
+}
