@@ -4,20 +4,17 @@
   "input_shape": "1x3x480x640",
   "quantisation": "int16",
   "march": "nash-m",
-
   "toolchain": {
     "openexplorer": "3.7.0",
     "hbdk": "4.7.5",
     "board_system": "4.0.5",
     "note": "Recorded so a future failure can be attributed. The host HBDK and the board HBRT must match; 3.7.0 host pairs with 4.0.5 board."
   },
-
   "cosine": {
     "A": 0.99,
     "B": 1.0,
     "C": 0.99
   },
-
   "measured": {
     "note": "Measured on S100P with the crop-calibrated build. Latency is from hrt_model_exec perf on a quiet board — a board with a crashed process leaking VPU/BPU resources reports substantially worse until reboot.",
     "cosine_vs_fp32": 0.99986,
@@ -25,11 +22,18 @@
     "outliers_gt_3px": 0.0,
     "systematic_bias_px": 0.004,
     "latency_ms": 14.0,
-    "fps": 71
+    "fps": 71,
+    "layer_A_output_cosine": 0.999954,
+    "layer_A_note": "Re-measured in this repo on OE 3.7.0 from the crop build's calibration; matches hb_compile's reported output cosine.",
+    "node_info": {
+      "median_per_layer_quantised_cosine": 0.9863,
+      "worst_per_layer": 0.9436,
+      "layers_below_0.99": "430 of 651",
+      "output_data_type": "si16 on 642 nodes, si8 on 16 -- confirms set_all_nodes_int16",
+      "caution": "Per-layer cosine is a localisation tool, not a gate: two thirds of layers sit below 0.99 while the model output is 0.999954."
+    }
   },
-
   "task_metric": null,
-
   "rejected_builds": [
     {
       "name": "int8 (all)",

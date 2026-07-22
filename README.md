@@ -80,9 +80,21 @@ metric in `expected.json` too.
 ## Status
 
 Recipes are being reconstructed from the original conversion work; not every
-model listed in BCDL's catalogue is here yet. See each model directory for what
-is actually verified. Models whose recipe is present but not yet re-run
-end-to-end say so in their own README rather than silently implying they work.
+model in BCDL's catalogue is here yet. **A recipe being present does not mean it
+has been re-run** — each model's README states exactly how far it got, and
+`expected.json` distinguishes gates from measurements.
+
+| model | recipe | verified to |
+|---|---|---|
+| [`las2`](models/las2/) — stereo disparity | complete | export reproduces the original graph; **layer A cosine 0.999954**; compiled on OE 3.7.0. Board layers B/C not re-measured here |
+| [`ppocr_v6`](models/ppocr_v6/) — OCR det + rec | complete | static export + dictionary asserted against model width; **decode verified character-exact against PaddleOCR in ONNX Runtime**. Not yet compiled or board-run |
+
+Recipes still to reconstruct, roughly in cost order: `superres`, `xfeat`,
+`yoloe` (scripts survive intact); `span`, `vitpose` (one piece missing each);
+`face`, `edgesam` (recoverable by diffing the derived ONNX against its parent);
+`pidnet`, `yolop`, `osnet` (the three whose write-ups are worth the most);
+`yolo26` (hardest — its compile config was never saved and must be reconstructed
+from the compile log).
 
 ## Licence
 

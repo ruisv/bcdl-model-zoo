@@ -129,9 +129,36 @@ quantise the whole graph.**
 Some networks cannot be rescued by bit width at all. OSNet's int8 PTQ compiles
 cleanly and emits well-formed unit vectors whose Market-1501 Rank-1 is 51%
 against the float model's 85%; it needed QAT self-distillation to reach 84.6%.
-Use `<prefix>_node_info.csv` (per-layer BPU/CPU placement and per-layer cosine)
-to find out whether the loss is one isolated layer or spread across the graph —
-if it is spread, mixed precision has nothing to target.
+Use `<prefix>_node_info.csv` (per-layer placement and per-layer cosine) to find
+out whether the loss is one isolated layer or spread across the graph — if it is
+spread, mixed precision has nothing to target.
+
+**Per-layer cosine is a localisation tool, not a quality gate.** Do not read a
+low number there as a failure. Measured on the accepted all-int16 LAS2 build:
+
+| | value |
+|---|---|
+| median per-layer quantised cosine | 0.9863 |
+| worst per-layer | 0.9436 |
+| layers below 0.99 | 430 of 651 |
+| **model output cosine** | **0.999954** |
+
+Two thirds of the layers sit under the 0.99 that gates the *model*, and the
+model is nonetheless near-perfect: intermediate error does not simply
+accumulate, and a per-layer figure is not comparable to an end-to-end one. Use
+the column to compare candidate builds against each other and to find outliers
+worth attention — never to accept or reject a build. That decision belongs to
+`expected.json`.
+
+Two more columns worth reading correctly:
+
+- **`Output Data Type`** is the real evidence of what your quantisation
+  directive did — the LAS2 int16 build shows `si16` on 642 nodes and `si8` on
+  16. Check this rather than trusting the yaml.
+- **`ON`** is not a clean BPU/CPU split. It shows `--` for nodes that do not
+  execute standalone, including fused ones and the graph's own output node, so a
+  `--` is **not** proof of CPU fallback. If you need to know where an operator
+  really ran, measure it; do not infer it from this column.
 
 ## Verification
 

@@ -94,6 +94,10 @@ Verified as far as it can be without the board:
 
 **Not yet done:** neither model has been compiled to `.hbm` or run on the
 board, so there are no quantisation, latency or accuracy figures. `expected.json`
-records gates, not measurements. Note also that both graphs contain `Erf`
-(GELU); whether it lands on BPU or falls back to CPU is unmeasured, and for the
-detector that matters — check `<prefix>_node_info.csv` after the first compile.
+records gates, not measurements.
+
+Both graphs contain `Erf` (GELU), and whether that costs anything is unmeasured.
+Note that `node_info.csv` will **not** answer it: its `ON` column shows `--` for
+fused and non-standalone nodes, so a `--` against GELU is not evidence of CPU
+fallback (see [CONVERSION.md](../../CONVERSION.md#verification)). The honest way
+to settle it is a latency measurement on the board.

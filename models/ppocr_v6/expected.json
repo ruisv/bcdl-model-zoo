@@ -3,42 +3,41 @@
   "upstream": "PaddleOCR PP-OCRv6 (v3.7.0 release)",
   "licence": "Apache-2.0",
   "march": "nash-m",
-
   "toolchain": {
     "openexplorer": "3.7.0",
     "note": "Upstream publishes ONNX directly; no paddle2onnx step. Shapes fixed with onnxslim 0.1.59."
   },
-
   "shapes": {
-    "det": {"input": "1x3x960x960", "output": "1x1x960x960"},
-    "rec": {"input": "1x3x48x320", "output": "1x40x18710"}
+    "det": {
+      "input": "1x3x960x960",
+      "output": "1x1x960x960"
+    },
+    "rec": {
+      "input": "1x3x48x320",
+      "output": "1x40x18710"
+    }
   },
-
   "dictionary": {
     "file": "ppocr_keys_v6_18710.txt",
     "entries": 18710,
     "layout": "line 0 = 'blank' placeholder, then characters, then a trailing space",
     "warning": "medium and small share this charset; tiny is a separate 6906-class charset and must use its own file"
   },
-
   "cosine": {
     "A": 0.99,
     "B": 1.0,
     "C": 0.99
   },
-
   "task_metric": {
     "name": "greedy CTC decode matches PaddleOCR output on the same crop",
     "threshold": "character-exact",
     "measured_onnx": "PASS at 48x960; at 48x320 a 19.8:1 crop loses characters to the aspect squeeze (expected, not a defect)"
   },
-
   "measured": {
     "note": "No .hbm has been compiled yet. No quantisation, latency or board figures exist for this model; the cosine values above are gates, not measurements."
   },
-
   "open_questions": [
-    "Erf (GELU) appears in both graphs - confirm BPU placement vs CPU fallback in <prefix>_node_info.csv after the first compile.",
-    "Recognition is a transformer-ish SVTR stack; if int8 PTQ degrades, check per-layer cosine before reaching for mixed precision (see CONVERSION.md)."
+    "Erf (GELU) appears in both graphs; cost is unmeasured. node_info.csv cannot settle it -- its ON column shows '--' for fused/non-standalone nodes, which is not evidence of CPU fallback. Measure latency on the board instead.",
+    "Recognition is a transformer-ish SVTR stack; if int8 PTQ degrades, read per-layer cosine only to localise, not to accept or reject (see CONVERSION.md)."
   ]
 }
