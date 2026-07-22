@@ -69,18 +69,40 @@ nearest-neighbour Resize, and no unfold / 3D-conv / LayerNorm / GridSample.
 ## Running it
 
 ```bash
-python export.py   --ckpt <upstream .pth> --out las2_m_480x640.onnx
-python calib.py    --mode crop   --out cal_crop/        # or --mode resize
-./compile.sh --workdir . --onnx las2_m_480x640.onnx --calib cal_crop \
-             --prefix las2_m_crop_nashm --march nash-m --gpu 0
+# 1. upstream checkpoint -> BPU-friendly ONNX (~6s)
+python export.py --repo /path/to/LiteAnyStereo --size m --hw 480 640 \
+                 --out las2_m_480x640.onnx
+
+# 2. calibration. The config selects the build; --mode must agree with it.
+python calib.py --config config.yaml --mode crop \
+                --sbs-dir '/path/to/captures/Explorer_HD2K*.png'
+
+# 3. compile (config.yaml = crop, config_resize.yaml = resize)
+./compile.sh --config config.yaml --gpu 2
 ```
 
-`--march nash-m` targets S100P. The calibration GPU needs Ampere or newer — the
-PTQ CUDA kernels fail with `cudaErrorInvalidDevice` on older cards.
+`--sbs-dir` takes a **glob**, not just a directory: capture folders usually hold
+more than the stereo set, and the extras are both out-of-domain (RULE 2) and
+often too small to crop.
+
+`--gpu` is an **nvidia-smi index**, handed to docker as `--gpus device=N`. It is
+deliberately not `CUDA_VISIBLE_DEVICES`, which numbers devices differently — see
+[CONVERSION.md](../../CONVERSION.md#traps). The card must be Ampere or newer.
+
+Both configs target `nash-m` (S100/S100P). `jobs` lives in the config, not on
+the command line.
 
 ## Status
 
-The scripts here are the originals from the LAS2 adaptation work and are
-complete. `calib.py` is still named `gen_calib.py` and does not yet route
-through `common/calib_pack.py`; the accuracy figures above were measured with
-these scripts as they stand.
+Re-run end to end on OpenExplorer 3.7.0 and verified at each step:
+
+- **export** reproduces the original model — 2259 nodes, identical op histogram
+  and I/O signature, all 278 initializers matching to 7e-7. Not byte-identical
+  (ONNX metadata differs), which is expected.
+- **calibration** writes 5 same-domain pairs per RULE 2, through
+  `common/calib_pack.py`.
+- **layer A** (quantisation fidelity) measured **cosine 0.999954** on `disp`,
+  against the 0.99 gate in `expected.json`.
+
+Layers B and C need the board and have not been re-measured in this repo; the
+figures in `expected.json` come from the original adaptation work.

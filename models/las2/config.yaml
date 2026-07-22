@@ -1,0 +1,26 @@
+# LAS2-M, centre-crop calibration. This is the build BCDL's stereo test uses.
+#
+# The crop/resize choice is not a quality knob: it must match how the runtime
+# letterboxes the incoming pair. See README.md and config_resize.yaml.
+#
+# Fully int16 (`set_all_nodes_int16`). int8 puts a ~1px systematic offset on the
+# disparity, and mixed precision is 6x slower than this — both measured, see
+# expected.json "rejected_builds".
+model_parameters:
+  onnx_model: "las2_m_480x640.onnx"
+  march: "nash-m"
+  working_dir: "./out_crop"
+  output_model_file_prefix: "las2_m_crop_nashm"
+input_parameters:
+  input_name: "left;right"
+  input_type_rt: "featuremap;featuremap"
+  input_type_train: "featuremap;featuremap"
+  norm_type: "no_preprocess;no_preprocess"
+calibration_parameters:
+  cal_data_dir: "/ws/cal_crop/left;/ws/cal_crop/right"
+  calibration_type: "default"
+  optimization: "set_all_nodes_int16"
+compiler_parameters:
+  optimize_level: "O2"
+  compile_mode: "latency"
+  jobs: 32

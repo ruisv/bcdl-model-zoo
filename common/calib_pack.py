@@ -21,12 +21,27 @@ mean/scale lived in the yaml while normalisation happened in a separate ad-hoc
 script; nothing tied the two together, so they drifted. Here they cannot: if you
 change mean_value in the yaml, the calibration data changes with it.
 
-Usage:
-    python calib_pack.py --config models/<name>/config.yaml \\
-                         --images /path/to/images --limit 64
+Two ways to use it:
 
-Writes to the `cal_data_dir` named by the config, so the compile step needs no
-matching argument either.
+  CLI — single image input, sourced from a directory:
+      python calib_pack.py --config models/<name>/config.yaml \\
+                           --images /path/to/images --limit 64
+
+  Library — anything else. Models whose calibration needs real geometry (stereo
+  pairs, letterbox modes, crops driven by a detector) own that logic in their
+  own calib.py and call pack() with the arrays they built. The geometry is
+  model-specific and does not belong in here; the normalisation invariant does,
+  and stays enforced either way:
+
+      from calib_pack import load_config, pack
+      cfg = load_config("config.yaml")
+      pack(cfg.inputs[0], left_arrays)     # CHW float32, 0-255 for images
+      pack(cfg.inputs[1], right_arrays)
+
+hb_compile takes multi-input models as `;`-separated lists in every one of
+input_name / input_type_train / norm_type / cal_data_dir, and those lists must
+line up positionally. Mismatched lengths are rejected here rather than at
+compile time, where the error does not name the field.
 """
 from __future__ import annotations
 
@@ -36,17 +51,36 @@ import hashlib
 import json
 import os
 import sys
+from dataclasses import dataclass, field
+from typing import Iterable, Optional
 
 import numpy as np
 import yaml
 
-# cv2 is imported lazily inside the packing path: --self-test needs only numpy
-# and yaml, and the toolchain env does not necessarily carry OpenCV.
+# cv2 is imported lazily inside the CLI path: --self-test and the library API
+# need only numpy and yaml, and the toolchain env does not carry OpenCV.
+
+IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
+
+
+def _split(v, n, name):
+    """hb_compile encodes per-input values as a `;`-separated list."""
+    if v is None:
+        return [None] * n
+    parts = [p.strip() for p in str(v).split(";")]
+    if len(parts) == 1 and n > 1:
+        return parts * n
+    if len(parts) != n:
+        raise SystemExit(
+            f"{name}: {len(parts)} value(s) for {n} input(s). Every per-input "
+            f"field must line up positionally with input_name."
+        )
+    return parts
 
 
 def _parse_triplet(v, name):
-    """hb_compile accepts these as a space-separated string or a bare scalar."""
-    if v is None:
+    """Accepted as a space-separated string or a bare scalar."""
+    if v is None or v == "":
         return None
     if isinstance(v, (int, float)):
         return np.array([float(v)] * 3, dtype=np.float32)
@@ -58,93 +92,246 @@ def _parse_triplet(v, name):
     return np.array([float(p) for p in parts], dtype=np.float32)
 
 
-def normalize(chw: np.ndarray, norm_type: str, mean, scale) -> np.ndarray:
-    """Apply exactly what the runtime will apply. `chw` is float32 CHW, 0-255.
+@dataclass
+class InputSpec:
+    """One model input: how to normalise it and where its calibration data goes."""
+    name: str
+    norm_type: Optional[str]
+    colour: str
+    cal_dir: Optional[str]
+    mean: Optional[np.ndarray] = None
+    scale: Optional[np.ndarray] = None
+    h: Optional[int] = None
+    w: Optional[int] = None
+    layout: str = "NCHW"
+    dtype: str = "float32"
+    fmt: str = "npy"   # OE 3.7.0 asks for npy; bin is legacy
 
-    Kept as a standalone function so it can be tested against a known-good
-    calibration set (see --self-test).
+    @property
+    def is_image(self) -> bool:
+        # `featuremap` inputs are arbitrary tensors: no colour order, and the
+        # caller supplies them directly rather than reading images from disk.
+        return self.colour in ("rgb", "bgr")
+
+
+@dataclass
+class CalibConfig:
+    inputs: list = field(default_factory=list)
+    path: str = ""
+
+
+def normalize(chw: np.ndarray, spec: InputSpec) -> np.ndarray:
+    """Apply exactly what the runtime will apply. `chw` is float32, CHW.
+
+    Standalone so it can be checked against a known-good calibration set
+    (see --self-test).
     """
     out = chw.astype(np.float32, copy=True)
-    if norm_type in (None, "", "no_preprocess"):
+    nt = spec.norm_type
+    if nt in (None, "", "no_preprocess"):
         return out
-    if norm_type == "data_scale":
-        if scale is None:
-            raise SystemExit("norm_type=data_scale requires scale_value")
-        return out * scale.reshape(3, 1, 1)
-    if norm_type == "data_mean":
-        if mean is None:
-            raise SystemExit("norm_type=data_mean requires mean_value")
-        return out - mean.reshape(3, 1, 1)
-    if norm_type == "data_mean_and_scale":
-        if mean is None or scale is None:
+    c = out.shape[0]
+    if nt == "data_scale":
+        if spec.scale is None:
+            raise SystemExit(f"{spec.name}: norm_type=data_scale requires scale_value")
+        return out * spec.scale[:c].reshape(c, 1, 1)
+    if nt == "data_mean":
+        if spec.mean is None:
+            raise SystemExit(f"{spec.name}: norm_type=data_mean requires mean_value")
+        return out - spec.mean[:c].reshape(c, 1, 1)
+    if nt == "data_mean_and_scale":
+        if spec.mean is None or spec.scale is None:
             raise SystemExit(
-                "norm_type=data_mean_and_scale requires mean_value and scale_value"
+                f"{spec.name}: norm_type=data_mean_and_scale requires both "
+                f"mean_value and scale_value"
             )
-        return (out - mean.reshape(3, 1, 1)) * scale.reshape(3, 1, 1)
+        return (out - spec.mean[:c].reshape(c, 1, 1)) * spec.scale[:c].reshape(c, 1, 1)
     raise SystemExit(
-        f"unsupported norm_type {norm_type!r}. If the model genuinely needs "
-        f"something else, add it here — do not pre-normalise elsewhere."
+        f"{spec.name}: unsupported norm_type {nt!r}. If the model genuinely "
+        f"needs something else, add it here — do not pre-normalise elsewhere."
     )
 
 
-def load_config(path):
+def _resolve_dir(d: Optional[str], config_path: str) -> Optional[str]:
+    """cal_data_dir is written as a container path; map it back outside one.
+
+    compile.sh mounts the model directory at /ws, so `/ws/<rest>` is
+    `<model dir>/<rest>`. The whole suffix has to survive: collapsing it to a
+    basename merges `/ws/cal_crop/left` and `/ws/cal_resize/left` into the same
+    directory, which is precisely the crop/resize mix-up this model punishes.
+    """
+    if not d:
+        return d
+    if d.startswith("/ws/") and not os.path.isdir("/ws"):
+        return os.path.join(os.path.dirname(os.path.abspath(config_path)),
+                            *d[len("/ws/"):].rstrip("/").split("/"))
+    return d
+
+
+def load_config(path: str) -> CalibConfig:
     with open(path) as f:
         cfg = yaml.safe_load(f)
     ip = cfg.get("input_parameters") or {}
     cp = cfg.get("calibration_parameters") or {}
 
-    shape = ip.get("input_shape")
-    if not shape:
-        raise SystemExit(f"{path}: input_parameters.input_shape is required")
-    dims = [int(d) for d in str(shape).lower().split("x")]
-    if len(dims) != 4:
-        raise SystemExit(f"{path}: expected a 4-D input_shape, got {shape!r}")
+    names = [n.strip() for n in str(ip.get("input_name") or "input").split(";")]
+    n = len(names)
 
-    layout = (ip.get("input_layout_train") or "NCHW").upper()
-    if layout == "NCHW":
-        _, c, h, w = dims
-    elif layout == "NHWC":
-        _, h, w, c = dims
-    else:
-        raise SystemExit(f"{path}: unsupported input_layout_train {layout!r}")
-    if c != 3:
-        raise SystemExit(f"{path}: only 3-channel inputs are handled, got C={c}")
+    norms = _split(ip.get("norm_type"), n, "norm_type")
+    colours = _split(ip.get("input_type_train") or "rgb", n, "input_type_train")
+    means = _split(ip.get("mean_value"), n, "mean_value")
+    scales = _split(ip.get("scale_value"), n, "scale_value")
+    shapes = _split(ip.get("input_shape"), n, "input_shape")
+    layouts = _split(ip.get("input_layout_train") or "NCHW", n, "input_layout_train")
+    dirs = _split(cp.get("cal_data_dir"), n, "cal_data_dir")
+    # Per-input like every other field. hb_compile rejects a scalar here on a
+    # multi-input model ("Num of cal_data_type given: 1 is not equal to input
+    # num 2"), so it cannot be treated as a single value.
+    #
+    # It is also deprecated as of OE 3.7.0, which asks for npy calibration data
+    # instead; prefer omitting it entirely on new models. Legacy configs that
+    # still carry it (with .bin data) keep working.
+    dtypes = _split(cp.get("cal_data_type"), n, "cal_data_type")
 
-    return {
-        "h": h,
-        "w": w,
-        "layout": layout,
-        "colour": (ip.get("input_type_train") or "rgb").lower(),
-        "norm_type": ip.get("norm_type"),
-        "mean": _parse_triplet(ip.get("mean_value"), "mean_value"),
-        "scale": _parse_triplet(ip.get("scale_value"), "scale_value"),
-        "cal_dir": cp.get("cal_data_dir"),
-        "cal_dtype": (cp.get("cal_data_type") or "float32").lower(),
+    specs = []
+    for i in range(n):
+        h = w = None
+        layout = (layouts[i] or "NCHW").upper()
+        if shapes[i]:
+            dims = [int(d) for d in str(shapes[i]).lower().split("x")]
+            if len(dims) == 4:
+                if layout == "NCHW":
+                    _, _, h, w = dims
+                elif layout == "NHWC":
+                    _, h, w, _ = dims
+                else:
+                    raise SystemExit(f"unsupported input_layout_train {layout!r}")
+        specs.append(InputSpec(
+            name=names[i],
+            norm_type=norms[i],
+            colour=(colours[i] or "rgb").lower(),
+            cal_dir=_resolve_dir(dirs[i], path),
+            mean=_parse_triplet(means[i], "mean_value"),
+            scale=_parse_triplet(scales[i], "scale_value"),
+            h=h, w=w, layout=layout,
+            dtype=(dtypes[i] or "float32").lower(),
+        ))
+    return CalibConfig(inputs=specs, path=path)
+
+
+def pack(spec: InputSpec, arrays: Iterable[np.ndarray], out_dir: str = None,
+         fmt: str = None, sources: list = None) -> str:
+    """Normalise and write one input's calibration set.
+
+    `arrays` yields CHW float32 — 0-255 for image inputs, whatever the model
+    expects for featuremap inputs. Normalisation comes from `spec` (i.e. from
+    config.yaml) and cannot be overridden here; that is the point of the module.
+    """
+    out_dir = out_dir or spec.cal_dir
+    if not out_dir:
+        raise SystemExit(f"{spec.name}: no cal_data_dir in config and no out_dir given")
+    fmt = fmt or spec.fmt
+    os.makedirs(out_dir, exist_ok=True)
+
+    count = 0
+    lo = hi = None
+    for i, arr in enumerate(arrays):
+        a = np.asarray(arr, dtype=np.float32)
+        if a.ndim == 4:
+            if a.shape[0] != 1:
+                raise SystemExit(f"{spec.name}: expected batch 1, got {a.shape}")
+            a = a[0]
+        if a.ndim != 3:
+            raise SystemExit(f"{spec.name}: expected CHW or 1CHW, got {a.shape}")
+
+        a = normalize(a, spec)
+        out = a if spec.layout == "NCHW" else a.transpose(1, 2, 0)
+
+        if spec.dtype == "float32":
+            out = out.astype(np.float32)
+        elif spec.dtype == "uint8":
+            out = np.clip(out, 0, 255).astype(np.uint8)
+        else:
+            raise SystemExit(f"unsupported cal_data_type {spec.dtype!r}")
+
+        if fmt == "npy":
+            np.save(os.path.join(out_dir, f"{i:03d}.npy"), out[None])
+        else:
+            out.tofile(os.path.join(out_dir, f"{i:03d}.bin"))
+
+        lo = out.min() if lo is None else min(lo, out.min())
+        hi = out.max() if hi is None else max(hi, out.max())
+        count += 1
+
+    if count == 0:
+        raise SystemExit(f"{spec.name}: no calibration samples were written")
+
+    # The manifest is how a rebuild proves it used the same inputs as the build
+    # the accuracy numbers came from — calibration data is not committed.
+    manifest = {
+        "input_name": spec.name,
+        "norm_type": spec.norm_type,
+        "mean_value": None if spec.mean is None else spec.mean.tolist(),
+        "scale_value": None if spec.scale is None else spec.scale.tolist(),
+        "layout": spec.layout,
+        "dtype": spec.dtype,
+        "format": fmt,
+        "count": count,
+        "value_range": [float(lo), float(hi)],
+        "sources": sources or [],
     }
+    # NOT inside out_dir: hb_compile treats every file in cal_data_dir as a
+    # calibration sample and fails trying to reshape the manifest into an input
+    # ("cannot reshape array of size 196 into shape (1,3,480,640)").
+    manifest_path = os.path.join(os.path.dirname(out_dir.rstrip("/")),
+                                 f"{os.path.basename(out_dir.rstrip('/'))}.manifest.json")
+    with open(manifest_path, "w") as f:
+        json.dump(manifest, f, indent=2)
+
+    print(f"  {spec.name}: {count} x {fmt}  norm={spec.norm_type}  "
+          f"range [{lo:.4f}, {hi:.4f}]  -> {out_dir}")
+    if spec.norm_type not in (None, "", "no_preprocess") and hi > 64:
+        print(f"  WARNING: {spec.name} looks un-normalised despite norm_type="
+              f"{spec.norm_type}.", file=sys.stderr)
+    return out_dir
 
 
-def self_test(cfg, raw_dir, ref_dir):
-    """Prove the normalisation matches a known-good set, byte for byte.
+def _read_images(files, spec: InputSpec):
+    import cv2
+    for path in files:
+        img = cv2.imread(path, cv2.IMREAD_COLOR)  # BGR HWC uint8
+        if img is None:
+            raise SystemExit(f"could not read {path}")
+        if spec.h and spec.w:
+            img = cv2.resize(img, (spec.w, spec.h), interpolation=cv2.INTER_LINEAR)
+        if spec.colour == "rgb":
+            img = img[:, :, ::-1]
+        yield np.ascontiguousarray(img.transpose(2, 0, 1)).astype(np.float32)
+
+
+def self_test(cfg: CalibConfig, raw_dir: str, ref_dir: str):
+    """Prove normalisation matches a known-good set, byte for byte.
 
     Reads raw (un-normalised) calibration files and the reference normalised
-    ones produced by the original conversion, and checks this module reproduces
-    the reference. This is what makes the tool trustworthy on models whose
-    calibration set we cannot regenerate from source images.
+    ones from the original conversion, and checks this module reproduces them.
+    This is what makes the tool trustworthy for models whose calibration set
+    cannot be regenerated from source images.
     """
+    spec = cfg.inputs[0]
     raws = sorted(glob.glob(os.path.join(raw_dir, "*.bin")))
     refs = sorted(glob.glob(os.path.join(ref_dir, "*.bin")))
     if not raws or len(raws) != len(refs):
         raise SystemExit(f"self-test: {len(raws)} raw vs {len(refs)} reference files")
-    shape = (3, cfg["h"], cfg["w"]) if cfg["layout"] == "NCHW" else (cfg["h"], cfg["w"], 3)
+    shape = ((3, spec.h, spec.w) if spec.layout == "NCHW"
+             else (spec.h, spec.w, 3))
     worst = 0.0
     for r, e in zip(raws, refs):
         a = np.fromfile(r, dtype=np.float32).reshape(shape)
         want = np.fromfile(e, dtype=np.float32).reshape(shape)
-        if cfg["layout"] == "NHWC":
-            got = normalize(a.transpose(2, 0, 1), cfg["norm_type"], cfg["mean"],
-                            cfg["scale"]).transpose(1, 2, 0)
+        if spec.layout == "NHWC":
+            got = normalize(a.transpose(2, 0, 1), spec).transpose(1, 2, 0)
         else:
-            got = normalize(a, cfg["norm_type"], cfg["mean"], cfg["scale"])
+            got = normalize(a, spec)
         worst = max(worst, float(np.abs(got - want).max()))
     print(f"self-test: {len(raws)} files, max abs deviation {worst:.3e}")
     if worst > 1e-4:
@@ -153,13 +340,14 @@ def self_test(cfg, raw_dir, ref_dir):
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config", required=True, help="the model's hb_compile config.yaml")
     ap.add_argument("--images", help="directory or glob of source images")
     ap.add_argument("--out", help="override cal_data_dir from the config")
-    ap.add_argument("--limit", type=int, default=64,
-                    help="how many images to pack (default 64)")
+    ap.add_argument("--limit", type=int, default=64, help="images to pack (default 64)")
+    ap.add_argument("--format", choices=["npy", "bin"], default="npy",
+                    help="npy is what the toolchain now asks for; bin is legacy")
     ap.add_argument("--self-test", nargs=2, metavar=("RAW_DIR", "REF_DIR"),
                     help="verify normalisation against a known-good calibration set")
     args = ap.parse_args()
@@ -172,80 +360,33 @@ def main():
 
     if not args.images:
         ap.error("--images is required unless --self-test is given")
-
-    import cv2  # noqa: E402  (see the note beside the numpy import)
-
-    out_dir = args.out or cfg["cal_dir"]
-    if not out_dir:
-        raise SystemExit("no cal_data_dir in the config and no --out given")
-    # cal_data_dir is written as a container path (/ws/...); map it back to the
-    # model directory when running outside the container.
-    if out_dir.startswith("/ws/") and not os.path.isdir("/ws"):
-        out_dir = os.path.join(os.path.dirname(os.path.abspath(args.config)),
-                               os.path.basename(out_dir.rstrip("/")))
-    os.makedirs(out_dir, exist_ok=True)
+    if len(cfg.inputs) != 1:
+        ap.error(
+            f"this model has {len(cfg.inputs)} inputs "
+            f"({', '.join(i.name for i in cfg.inputs)}); the CLI handles the "
+            f"single-image-input case only. Multi-input models pair their "
+            f"samples with model-specific logic, so write the model's calib.py "
+            f"against the library API — see the module docstring."
+        )
+    spec = cfg.inputs[0]
+    if not spec.is_image:
+        ap.error(f"input_type_train={spec.colour!r} is not an image input; "
+                 f"use the library API from the model's calib.py")
 
     pats = args.images
     files = sorted(glob.glob(os.path.join(pats, "*")) if os.path.isdir(pats)
                    else glob.glob(pats))
     files = [f for f in files
-             if os.path.splitext(f)[1].lower() in
-             (".jpg", ".jpeg", ".png", ".bmp", ".webp")][: args.limit]
+             if os.path.splitext(f)[1].lower() in IMAGE_EXTS][: args.limit]
     if not files:
         raise SystemExit(f"no images found under {pats!r}")
 
-    manifest = {
-        "config": os.path.basename(args.config),
-        "norm_type": cfg["norm_type"],
-        "mean_value": None if cfg["mean"] is None else cfg["mean"].tolist(),
-        "scale_value": None if cfg["scale"] is None else cfg["scale"].tolist(),
-        "input_shape": f"1x3x{cfg['h']}x{cfg['w']}",
-        "layout": cfg["layout"],
-        "colour": cfg["colour"],
-        "count": len(files),
-        "sources": [],
-    }
-
-    for i, path in enumerate(files):
-        img = cv2.imread(path, cv2.IMREAD_COLOR)  # BGR HWC uint8
-        if img is None:
-            raise SystemExit(f"could not read {path}")
-        img = cv2.resize(img, (cfg["w"], cfg["h"]), interpolation=cv2.INTER_LINEAR)
-        if cfg["colour"] == "rgb":
-            img = img[:, :, ::-1]
-        elif cfg["colour"] != "bgr":
-            raise SystemExit(f"unsupported input_type_train {cfg['colour']!r}")
-
-        chw = np.ascontiguousarray(img.transpose(2, 0, 1)).astype(np.float32)
-        chw = normalize(chw, cfg["norm_type"], cfg["mean"], cfg["scale"])
-        arr = chw if cfg["layout"] == "NCHW" else chw.transpose(1, 2, 0)
-
-        if cfg["cal_dtype"] == "float32":
-            arr = arr.astype(np.float32)
-        elif cfg["cal_dtype"] == "uint8":
-            arr = np.clip(arr, 0, 255).astype(np.uint8)
-        else:
-            raise SystemExit(f"unsupported cal_data_type {cfg['cal_dtype']!r}")
-
-        dst = os.path.join(out_dir, f"{i:03d}.bin")
-        arr.tofile(dst)
-        manifest["sources"].append({
-            "index": i,
-            "source": os.path.basename(path),
-            "sha256": hashlib.sha256(open(path, "rb").read()).hexdigest()[:16],
-        })
-
-    # The manifest is how a rebuild proves it used the same images as the build
-    # the accuracy numbers came from — calibration data is not committed.
-    with open(os.path.join(out_dir, "manifest.json"), "w") as f:
-        json.dump(manifest, f, indent=2)
-
-    a = np.fromfile(os.path.join(out_dir, "000.bin"), dtype=np.float32)
-    print(f"wrote {len(files)} files to {out_dir}  dtype={cfg['cal_dtype']}")
-    print(f"norm_type={cfg['norm_type']}  range [{a.min():.4f}, {a.max():.4f}]")
-    if cfg["norm_type"] not in (None, "", "no_preprocess") and a.max() > 64:
-        print("WARNING: values look un-normalised despite a norm_type being set.",
-              file=sys.stderr)
+    sources = [{"index": i, "source": os.path.basename(f),
+                "sha256": hashlib.sha256(open(f, "rb").read()).hexdigest()[:16]}
+               for i, f in enumerate(files)]
+    print(f"packing {len(files)} images from {pats}")
+    pack(spec, _read_images(files, spec), out_dir=args.out, fmt=args.format,
+         sources=sources)
 
 
 if __name__ == "__main__":

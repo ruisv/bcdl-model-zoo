@@ -1,0 +1,27 @@
+# LAS2-M, resize (whole-image scale) calibration.
+#
+# Differs from config.yaml ONLY in how the calibration pairs were letterboxed.
+# Use whichever matches your runtime: resizing a 2K pair down to 640 wide also
+# scales the disparity range by the same factor, so far-field disparity becomes
+# sub-pixel and depth (z = fx*B/d) amplifies the error by 1/d. Measured 10-33%
+# far-field depth error on resized ZED 2K input, against P99 1.18% for crop.
+#
+# Neither is wrong; calibrating one way and deploying the other is.
+model_parameters:
+  onnx_model: "las2_m_480x640.onnx"
+  march: "nash-m"
+  working_dir: "./out_resize"
+  output_model_file_prefix: "las2_m_int16_nashm"
+input_parameters:
+  input_name: "left;right"
+  input_type_rt: "featuremap;featuremap"
+  input_type_train: "featuremap;featuremap"
+  norm_type: "no_preprocess;no_preprocess"
+calibration_parameters:
+  cal_data_dir: "/ws/cal_resize/left;/ws/cal_resize/right"
+  calibration_type: "default"
+  optimization: "set_all_nodes_int16"
+compiler_parameters:
+  optimize_level: "O2"
+  compile_mode: "latency"
+  jobs: 32
