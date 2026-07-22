@@ -16,15 +16,13 @@
     "C": 0.99
   },
   "measured": {
-    "note": "Measured on S100P with the crop-calibrated build. Latency is from hrt_model_exec perf on a quiet board — a board with a crashed process leaking VPU/BPU resources reports substantially worse until reboot.",
+    "note": "Measured on S100P with the SHIPPED crop build, not the rebuild below. Latency is from hrt_model_exec perf on a quiet board -- a board with a crashed process leaking VPU/BPU resources reports substantially worse until reboot.",
     "cosine_vs_fp32": 0.99986,
     "epe_px": 0.12,
     "outliers_gt_3px": 0.0,
     "systematic_bias_px": 0.004,
     "latency_ms": 14.0,
     "fps": 71,
-    "layer_A_output_cosine": 0.999954,
-    "layer_A_note": "Re-measured in this repo on OE 3.7.0 from the crop build's calibration; matches hb_compile's reported output cosine.",
     "node_info": {
       "median_per_layer_quantised_cosine": 0.9863,
       "worst_per_layer": 0.9436,
@@ -47,5 +45,15 @@
       "fps": 12,
       "why": "The counter-intuitive one. Scattered int8/int16 boundaries make requant dominate: 6x SLOWER than quantising everything to int16, for worse accuracy."
     }
-  ]
+  ],
+  "rebuild": {
+    "note": "This repo's recipe re-run on OE 3.7.0. It is NOT the shipped binary and cannot be: the shipped crop build calibrated on 15 stereo pairs from an uncommitted capture set, while the upstream repo ships only 5.",
+    "hbm_bytes": 40658816,
+    "shipped_hbm_bytes": 40700800,
+    "calibration_pairs_used": 5,
+    "calibration_pairs_shipped": 15,
+    "compile_minutes": 39,
+    "hbrt": "4.7.5",
+    "layer_A_output_cosine": 0.999954
+  }
 }

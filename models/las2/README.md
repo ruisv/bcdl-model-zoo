@@ -94,15 +94,34 @@ the command line.
 
 ## Status
 
-Re-run end to end on OpenExplorer 3.7.0 and verified at each step:
+Re-run end to end on OpenExplorer 3.7.0 (HBRT 4.7.5), verified at each step:
 
-- **export** reproduces the original model — 2259 nodes, identical op histogram
+- **export** reproduces the original graph — 2259 nodes, identical op histogram
   and I/O signature, all 278 initializers matching to 7e-7. Not byte-identical
   (ONNX metadata differs), which is expected.
-- **calibration** writes 5 same-domain pairs per RULE 2, through
-  `common/calib_pack.py`.
+- **calibration** written through `common/calib_pack.py`.
 - **layer A** (quantisation fidelity) measured **cosine 0.999954** on `disp`,
-  against the 0.99 gate in `expected.json`.
+  against the 0.99 gate.
+- **compile** produced a 38.8 MB `.hbm` in ~39 min on one RTX-class GPU.
 
-Layers B and C need the board and have not been re-measured in this repo; the
-figures in `expected.json` come from the original adaptation work.
+### The rebuilt `.hbm` is not the shipped one, and cannot be
+
+40,658,816 bytes against the shipped model's 40,700,800 — a 0.1% difference, and
+they are not interchangeable byte-for-byte. The cause is calibration data: the
+shipped crop build used **15 stereo pairs from a capture set that was never
+committed anywhere**, and the only pairs available from the upstream repository
+are the **5** in its `assets/`. Different calibration set, different activation
+thresholds, different instruction stream.
+
+This is the failure mode the manifest mechanism exists to prevent going forward:
+`cal_crop/*.manifest.json` records each source file and its hash, so a future
+rebuild can at least *prove* whether it used the same inputs. It cannot help
+retroactively here, because the original set was never recorded.
+
+Practically: this recipe produces a **working, verified** LAS2 model, not a
+reproduction of the exact binary in BCDL's `models/`. If you need the shipped
+model's numbers specifically, use the shipped model.
+
+Layers B and C need the board and have not been measured in this repo. The EPE,
+latency and FPS figures in `expected.json` come from the original adaptation
+work on the shipped build — **not** from this rebuild.

@@ -86,7 +86,7 @@ has been re-run** — each model's README states exactly how far it got, and
 
 | model | recipe | verified to |
 |---|---|---|
-| [`las2`](models/las2/) — stereo disparity | complete | export reproduces the original graph; **layer A cosine 0.999954**; compiled on OE 3.7.0. Board layers B/C not re-measured here |
+| [`las2`](models/las2/) — stereo disparity | complete | export reproduces the original graph; **layer A cosine 0.999954**; compiled on OE 3.7.0 (38.8 MB hbm). Rebuild is not the shipped binary — calibration set differs; board layers B/C not measured here |
 | [`ppocr_v6`](models/ppocr_v6/) — OCR det + rec | complete | static export + dictionary asserted against model width; **decode verified character-exact against PaddleOCR in ONNX Runtime**. Not yet compiled or board-run |
 
 Recipes still to reconstruct, roughly in cost order: `superres`, `xfeat`,
