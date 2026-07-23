@@ -135,5 +135,34 @@
     },
     "recommendation": "For the 960 long-line build, use int16 (config_rec_int16_960.yaml). It halves the character error rate vs int8 AND produces a smaller .hbm. On genuinely long lines it is near-perfect; a 79-char sentence decoded exactly. Latency unmeasured on board.",
     "when_to_use_960": "Only when lines routinely exceed 6.7:1. 960 is 3x the area of 320 and short lines waste it on padding. For mixed content, keep the 320 build and split long lines by detector box."
+  },
+  "latency_board": {
+    "board": "S100P (HBRT 4.7.5), single BPU thread, hrt_model_exec perf",
+    "note": "Board confirmed quiet: repeated runs within 1.5%. 4-thread throughput adds <11%, so the models are BPU-bound and single-thread latency is the number that matters.",
+    "measurements": {
+      "det_960x960_int8": {
+        "latency_ms": 8.49,
+        "fps": 118
+      },
+      "rec_320_int8": {
+        "latency_ms": 4.69,
+        "fps": 213
+      },
+      "rec_320_int16": {
+        "latency_ms": 2.17,
+        "fps": 460
+      },
+      "rec_960_int8": {
+        "latency_ms": 12.78,
+        "fps": 78
+      },
+      "rec_960_int16": {
+        "latency_ms": 5.3,
+        "fps": 189
+      }
+    },
+    "key_finding": "int16 is 2.2x FASTER than int8 at 320 (2.17 vs 4.69 ms) and 2.4x at 960 (5.30 vs 12.78 ms). The int8 build is not pure int8 -- it is compiler-chosen mixed precision (164 int8 + 25 int16 + 2 int32), and the scattered int8/int16 boundaries each cost a requant. All-int16 is one contiguous fixed-point stream with no requant. Same trap as LAS2 mixed precision.",
+    "conclusion": "int16 wins on every axis for this recogniser: lower character error, smaller .hbm (at 960), AND lower latency. There is no reason to ship the int8 rec build. 960 int16 costs 2.4x the latency of 320 int16 (5.3 vs 2.2 ms) for ~3x the area -- cheap enough that long-line workloads should just use it.",
+    "det_note": "det stays int8 (a plain CNN with no requant problem); 8.49 ms / 118 FPS at 960x960."
   }
 }

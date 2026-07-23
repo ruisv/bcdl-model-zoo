@@ -134,6 +134,15 @@ int16. Scattered int8/int16 boundaries each need a requant, and that cost
 dominates. **Unless the int16 layers coalesce into large contiguous blocks,
 quantise the whole graph.**
 
+The PP-OCRv6 recogniser is the second worked example, and it makes the point
+sharper because the mixed build is what you get by *default*. With no directive
+the compiler chose 164 int8 / 25 int16 / 2 int32, and board latency came out
+**4.69 ms against all-int16's 2.17 ms** — the more aggressively quantised build
+was 2.2× faster. Same cause: requant at every int8↔int16 boundary. The lesson
+for a transformer-ish graph: measure `set_all_nodes_int16` on the board before
+accepting the default mix. Here all-int16 won on latency, accuracy, and size at
+once.
+
 Before hand-writing a mixed-precision config, see what the compiler does on its
 own. With no `optimization` directive, hb_compile already promotes the obviously
 sensitive layers: the PP-OCRv6 recogniser came out 162 int8 / 27 int16 / 2 int32

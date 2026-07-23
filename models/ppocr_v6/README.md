@@ -208,26 +208,36 @@ All four measured on the board against the matching float ONNX decode, with the
 rows use different test sets — 320 on short aspect-fitting crops, 960 on long
 lines — so read *int8-vs-int16 within a width*, not across widths:
 
-| build | config | test set | char error rate | hbm |
+| build | config | char error rate | latency | hbm |
 |---|---|---|---|---|
-| 320 int8 | `config_rec.yaml` | 20 short crops | 12.6 % | 22.7 MB |
-| 320 int16 | `config_rec_int16.yaml` | 20 short crops | **4.9 %** | 24.0 MB |
-| 960 int8 | `config_rec_960.yaml` | 21 long lines | 17.5 % | 30.7 MB |
-| 960 int16 | `config_rec_int16_960.yaml` | 21 long lines | **7.5 %** | 27.7 MB |
+| 320 int8 | `config_rec.yaml` | 12.6 % | 4.69 ms | 22.7 MB |
+| 320 int16 | `config_rec_int16.yaml` | **4.9 %** | **2.17 ms** | 24.0 MB |
+| 960 int8 | `config_rec_960.yaml` | 17.5 % | 12.78 ms | 30.7 MB |
+| 960 int16 | `config_rec_int16_960.yaml` | **7.5 %** | **5.30 ms** | 27.7 MB |
 
-**int16 wins at both widths, and by more than the numbers first suggest:**
+(CER measured against float — 320 rows on short aspect-fitting crops, 960 rows on
+long lines, so compare int8-vs-int16 within a width, not across. Latency is a
+single BPU thread on a quiet S100P; 4-thread throughput adds <11 %, so these are
+BPU-bound.)
 
-- It roughly halves the character error (4.9 vs 12.6, 7.5 vs 17.5).
-- It is **smaller** than int8 at 960 (27.7 vs 30.7 MB): a pure int16 graph is one
-  contiguous instruction stream, while the mixed int8/int16 default fragments.
-- Its layer B is **bit-identical** — no float CPU ops to drift through, unlike the
-  mixed build's 2e-4.
+**int16 wins on every axis — accuracy, size, AND speed — so there is no reason to
+ship the int8 rec build:**
 
-So the two builds to actually ship are **320 int16** for short/mixed content and
-**960 int16** for long lines. int8 exists mainly to show the cost; its errors are
-often single-glyph (`bywolu→bywolun`, `PA→IPA`, simplified-vs-traditional
-`大國→大国`), so exact-match reads worse than CER, but on long lines it genuinely
-falls behind.
+- It roughly **halves the character error** (4.9 vs 12.6, 7.5 vs 17.5).
+- It is **2.2–2.4× faster** (2.17 vs 4.69 ms at 320; 5.30 vs 12.78 at 960).
+- At 960 it is even **smaller** (27.7 vs 30.7 MB).
+
+The counter-intuitive part is the speed: quantising *more* aggressively is
+faster here. The reason is that the "int8" build is **not pure int8** — with no
+directive the compiler picks mixed precision (164 int8 + 25 int16 + 2 int32), and
+every int8↔int16 boundary costs a requant. All-int16 is one contiguous
+fixed-point stream with no requant at all. It is the same trap LAS2 documents:
+scattered mixed precision loses to uniform int16. Its layer B is also
+bit-identical (no float CPU ops to drift through, unlike the mixed build's 2e-4).
+
+**Ship 320 int16 for short/mixed content and 960 int16 for long lines.** The int8
+builds are kept only to demonstrate the cost. Detection stays int8 — it is a
+plain CNN with no requant problem, 8.49 ms / 118 FPS at 960×960.
 
 On the **960 long lines int16 is near-perfect** where it matters: a 79-char
 Chinese sentence decoded exactly, 74–76-char lines with one error each, and
@@ -238,6 +248,8 @@ mixed into that set, not by the long lines 960 exists for.
 > exaggerating both the loss and the gap. Fixing the preprocessing lifted both and
 > shrank the difference; these are the corrected numbers.
 
-**Still not done:** no latency measurement (needs `hrt_model_exec perf` on a
-quiet board) — and 960 is 3× the area, so its latency cost is the open question
-before defaulting to it. No end-to-end accuracy against a labelled page set.
+960 int16 costs **2.4× the latency** of 320 int16 (5.30 vs 2.17 ms) for ~3× the
+area — cheap enough at 189 FPS that a long-line workload should just use it.
+
+**Still not done:** no end-to-end accuracy against a labelled page set (the CER
+figures are vs the float model, not vs ground truth).
