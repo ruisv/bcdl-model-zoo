@@ -119,5 +119,21 @@
     },
     "recommendation": "Use int16 (config_rec_int16.yaml) when accuracy matters -- it more than halves CER. int8 is fine for easy well-cropped Latin text; most of its errors are single-glyph. Latency of int16 unmeasured on board.",
     "note_on_earlier_numbers": "An earlier evaluation used stretch preprocessing and reported int8 8/20 vs int16 17/20, exaggerating both the absolute loss and the int16 advantage. Superseded by the pad numbers above."
+  },
+  "wide_960_recognition": {
+    "why": "48x320 truncates lines longer than 6.7:1; 960 handles up to ~20:1. Chosen for long-line workloads.",
+    "int16_960": {
+      "hbm_mb": 27.7,
+      "quant_cosine": 0.9981,
+      "board_result": "On 21 long lines (float@960 reference), CER 7.5% (58/777). On genuinely long lines it is near-perfect: a 79-char Chinese sentence decoded exactly, 74/76-char lines with 1 error each, test.jpg (30 chars) with 1 insertion. The 7.5% is carried by short, hard crops, not the long lines 960 exists for.",
+      "compile_note": "hmct logged 2 onnxruntime Reshape errors on the Squeeze.3 node during calibration setup (a 5D attention reshape that onnxslim did not resolve for the 120-timestep shape). They did NOT affect the result: quant cosine 0.9981 and the board reproduces float@960 long-line decodes. Verdict that it is harmless comes from the BOARD, not the clean-compile -- exactly why compile success is never the gate."
+    },
+    "int8_960": {
+      "hbm_mb": 30.7,
+      "board_result": "On the same 21 long lines: CER 17.5% (136/777), exact 2/21.",
+      "note": "int8 is notably worse than int16 on long lines (17.5% vs 7.5%). It is also LARGER: 30.7 MB vs int16's 27.7 MB, because the mixed int8/int16 graph fragments while all-int16 is one contiguous instruction stream."
+    },
+    "recommendation": "For the 960 long-line build, use int16 (config_rec_int16_960.yaml). It halves the character error rate vs int8 AND produces a smaller .hbm. On genuinely long lines it is near-perfect; a 79-char sentence decoded exactly. Latency unmeasured on board.",
+    "when_to_use_960": "Only when lines routinely exceed 6.7:1. 960 is 3x the area of 320 and short lines waste it on padding. For mixed content, keep the 320 build and split long lines by detector box."
   }
 }

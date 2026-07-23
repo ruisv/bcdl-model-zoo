@@ -6,8 +6,15 @@ Licence tier **A** (Apache-2.0).
 | build | shape | output |
 |---|---|---|
 | `ppocrv6_medium_det_960x960.hbm` | 1×3×960×960 | 1×1×960×960 DB probability map |
-| `ppocrv6_medium_rec_48x320.hbm` | 1×3×48×320 | 1×40×18710 CTC logits |
-| `ppocr_keys_v6_18710.txt` | — | dictionary, paired with the rec model |
+| `ppocrv6_medium_rec_48x320.hbm` | 1×3×48×320 | 1×40×18710 CTC logits — short/mixed lines |
+| `ppocrv6_medium_rec_int16_48x960.hbm` | 1×3×48×960 | 1×120×18710 — **long lines, int16 (recommended)** |
+| `ppocr_keys_v6_18710.txt` | — | dictionary, paired with any rec build |
+
+There are four rec builds (320/960 × int8/int16) because two independent axes
+matter: **width** (320 truncates lines over 6.7:1, 960 takes ~20:1) and
+**precision** (int16 roughly halves the character error). The two recommended
+points are **320 int8** for short/mixed content and **960 int16** for long-line
+workloads; see [the rec build guide](#which-rec-build) below.
 
 There is **no v6 angle classifier**. Upstream ships only det and rec for v6, so
 keep using the v5 PP-LCNet textline classifier if you need one.
@@ -51,17 +58,16 @@ ONNX:
 Both float models drop characters at 320; the fix is width, not precision. **This
 is not a v6 regression — v5 has the same limit, worse.**
 
-**Should the rec ONNX just be exported wider?** It depends on your text. With the
-correct aspect-preserving preprocessing (trap #3), 320 already handles any line
-up to 6.7:1 without distortion — a short line is scaled to its natural width and
-right-padded, not stretched. Only genuinely long lines (a full sentence, a long
-digit string like the 19.8:1 sample above) overflow 320 and get truncated. For
-those, export wider — `export.py --task rec --hw 48 960` produces a valid
-`1×3×48×960 → 1×120×18710` graph — but the `.hbm` grows with input **area**
-(48×960 is 3× the instructions of 48×320) and every short line then wastes most
-of that width on padding. Usually the better answer is to **split long lines
-upstream** (the detector already yields per-line boxes) and keep the 320 model.
-Reserve a wide build for a workload that is genuinely long-line-dominated.
+**Should the rec ONNX just be exported wider?** For long-line workloads, yes — a
+960 build is provided and works well (see [Which rec build](#which-rec-build)).
+`export.py --task rec --hw 48 960` produces a valid `1×3×48×960 → 1×120×18710`
+graph, and on the board it decodes long lines the 320 model truncates: a 79-char
+Chinese sentence exactly, `test.jpg`'s 30-char string with a single insertion.
+The cost is real — the `.hbm` grows with input **area** (48×960 is 3× the
+instructions of 48×320) and short lines waste most of that width on padding — so
+for mixed content the better answer is still to **split long lines upstream** (the
+detector already yields per-line boxes) and keep the 320 model. Reserve 960 for a
+workload that is genuinely long-line-dominated.
 
 The practical consequence for **evaluating quantisation**: never measure int8 vs
 int16 on a crop wider than 6.7:1, or the aspect loss swamps the quantisation
@@ -144,8 +150,10 @@ Both models compiled to `.hbm` on OE 3.7.0 (HBRT 4.7.5), all int8 PTQ:
 | | hbm | output cosine (vs float) | quantisation | calibration |
 |---|---|---|---|---|
 | det | 22.4 MB | 0.9817 | all int8 | 24 dataset sample pages |
-| rec (int8) | 22.7 MB | 0.9819 | mixed (compiler-chosen: 162 int8 + 27 int16) | 64 line crops cut from those pages by the det ONNX |
-| rec (int16) | 24.0 MB | 0.9974 | all int16 (`config_rec_int16.yaml`) | same 64 crops |
+| rec 320 (int8) | 22.7 MB | 0.9819 | mixed (compiler-chosen: 162 int8 + 27 int16) | 64 line crops cut from those pages by the det ONNX |
+| rec 320 (int16) | 24.0 MB | 0.9974 | all int16 (`config_rec_int16.yaml`) | same 64 crops |
+| rec 960 (int8) | 30.7 MB | — | mixed | 64 crops, padded to 960 |
+| rec 960 (int16) | 27.7 MB | 0.9981 | all int16 (`config_rec_int16_960.yaml`) | same |
 
 The recogniser's default mix was **chosen by the compiler**, not requested: with
 no `optimization` directive, hb_compile promoted 27 nodes to int16 on its own —
@@ -193,33 +201,43 @@ Both models were run on an S100P (HBRT 4.7.5):
 The int8 output cosine being below 0.99 is **not** a port problem — layer B
 proves the board matches the host. It is the quantisation itself.
 
-### int8 vs int16 recognition (corrected preprocessing)
+### Which rec build
 
-Measured on 20 aspect-fitting crops (≤6.7:1, so the aspect limit is out of the
-picture), with the **correct pad preprocessing** on both calibration and
-evaluation, each board build compared to the float ONNX decode:
+All four measured on the board against the matching float ONNX decode, with the
+**correct pad preprocessing** on both calibration and evaluation. The 320 and 960
+rows use different test sets — 320 on short aspect-fitting crops, 960 on long
+lines — so read *int8-vs-int16 within a width*, not across widths:
 
-| rec build | exact match | char error rate | layer B | hbm |
+| build | config | test set | char error rate | hbm |
 |---|---|---|---|---|
-| int8 (default) | 9 / 20 | **12.6 %** | cosine 1.0, 2e-4 drift | 22.7 MB |
-| int16 (`config_rec_int16.yaml`) | 16 / 20 | **4.9 %** | bit-identical | 24.0 MB |
+| 320 int8 | `config_rec.yaml` | 20 short crops | 12.6 % | 22.7 MB |
+| 320 int16 | `config_rec_int16.yaml` | 20 short crops | **4.9 %** | 24.0 MB |
+| 960 int8 | `config_rec_960.yaml` | 21 long lines | 17.5 % | 30.7 MB |
+| 960 int16 | `config_rec_int16_960.yaml` | 21 long lines | **7.5 %** | 27.7 MB |
 
-Two readings of the same data:
+**int16 wins at both widths, and by more than the numbers first suggest:**
 
-- **int16 more than halves the character error** (4.9 % vs 12.6 %) and is the
-  build to use when recognition accuracy matters. Its layer B is bit-identical
-  again — a pure int16 graph has no float CPU ops to drift through, unlike the
-  mixed default.
-- **int8 is better than it first looked.** Most of its errors are single-glyph:
-  `bywolu→bywolun`, `PA→IPA`, simplified-vs-traditional `大國→大国`, and in one
-  case int8 is *more* complete than the float reference (`TheKig'→TheKing'`).
-  Exact-match 9/20 reads worse than the 12.6 % CER because one wrong glyph fails
-  a whole line. For easy, well-cropped Latin text int8 is fine.
+- It roughly halves the character error (4.9 vs 12.6, 7.5 vs 17.5).
+- It is **smaller** than int8 at 960 (27.7 vs 30.7 MB): a pure int16 graph is one
+  contiguous instruction stream, while the mixed int8/int16 default fragments.
+- Its layer B is **bit-identical** — no float CPU ops to drift through, unlike the
+  mixed build's 2e-4.
 
-An earlier version of this table (stretch preprocessing) reported int8 at 8/20
-and made int8 look far worse — that was the preprocessing distortion, not the
-quantiser. Fixing the preprocessing lifted both builds and shrank the gap; the
-int16 advantage is real but smaller than a stretched measurement implied.
+So the two builds to actually ship are **320 int16** for short/mixed content and
+**960 int16** for long lines. int8 exists mainly to show the cost; its errors are
+often single-glyph (`bywolu→bywolun`, `PA→IPA`, simplified-vs-traditional
+`大國→大国`), so exact-match reads worse than CER, but on long lines it genuinely
+falls behind.
+
+On the **960 long lines int16 is near-perfect** where it matters: a 79-char
+Chinese sentence decoded exactly, 74–76-char lines with one error each, and
+`test.jpg` with a single insertion. The 7.5 % is carried by the short, hard crops
+mixed into that set, not by the long lines 960 exists for.
+
+> An earlier 320 table (stretch preprocessing) reported int8 8/20 vs int16 17/20,
+> exaggerating both the loss and the gap. Fixing the preprocessing lifted both and
+> shrank the difference; these are the corrected numbers.
 
 **Still not done:** no latency measurement (needs `hrt_model_exec perf` on a
-quiet board), and no end-to-end accuracy against a labelled page set.
+quiet board) — and 960 is 3× the area, so its latency cost is the open question
+before defaulting to it. No end-to-end accuracy against a labelled page set.

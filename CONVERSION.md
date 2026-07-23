@@ -235,10 +235,16 @@ cap it afterwards: load the model, set `ir_version = 9`, save. IR9 covers up to
 opset 20, so this is a header change, not a downgrade of any operator. The
 per-model `export.py` handles it, but a hand-run conversion has to remember it.
 
-**A wrong build compiles cleanly.** This is the theme. Nearly every failure
-documented in this repo produced a model that compiled without warnings, loaded,
-and ran at full speed. Treat a successful compile as no evidence at all — the
-gate is `expected.json`, not the absence of errors.
+**A wrong build compiles cleanly — and a noisy compile can still be right.** This
+is the theme, and it cuts both ways. Nearly every failure in this repo produced a
+model that compiled without warnings, loaded, and ran at full speed; treat a
+successful compile as no evidence at all. But the converse also holds: the
+PP-OCRv6 960 recogniser logged two onnxruntime `Reshape` errors during
+calibration (a 5-D attention Squeeze that onnxslim did not resolve for the wider,
+120-timestep shape), and it compiled anyway to a model that decodes long lines
+correctly on the board. Errors in the log are a prompt to **go verify on the
+board**, not an automatic reject. The gate is `expected.json` and a board run,
+never the presence or absence of compile-time messages.
 
 **The file name is which build it is.** `_cut`, `_v3`, `_aligned`, `_qat`,
 `_crop` are not decoration. Keep the file name matching the model name inside
