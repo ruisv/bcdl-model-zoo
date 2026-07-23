@@ -117,6 +117,16 @@ def main():
         check=True, stdout=subprocess.DEVNULL,
     )
 
+    # The OE toolchain (HBDK 4.x) rejects ONNX IR > 9: "The ir version of the
+    # model is 10, which is greater than the maximum supported ir version of 9."
+    # The v6 detector exports at IR10, so cap it. IR9 covers opset 14, and
+    # onnxslim preserves the original IR, so this has to be done after it.
+    m = onnx.load(out)
+    if m.ir_version > 9:
+        m.ir_version = 9
+        onnx.save(m, out)
+        print(f"[export] capped IR version -> 9")
+
     shapes = static_shapes(out)
     for name, dims in shapes.items():
         if any(isinstance(d, str) for d in dims):

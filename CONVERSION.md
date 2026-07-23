@@ -201,6 +201,14 @@ the mistake above — check both.
 and point `HOME` and `MPLCONFIGDIR` at a writable path inside the mount or the
 toolchain fails on startup.
 
+**ONNX IR version must be ≤ 9.** HBDK 4.x rejects anything newer — *"The ir
+version of the model is 10, which is greater than the maximum supported ir
+version of 9."* Recent exporters emit IR10 by default (the PP-OCRv6 detector
+does; the recogniser, at IR6, does not). onnxslim preserves the source IR, so
+cap it afterwards: load the model, set `ir_version = 9`, save. IR9 covers up to
+opset 20, so this is a header change, not a downgrade of any operator. The
+per-model `export.py` handles it, but a hand-run conversion has to remember it.
+
 **A wrong build compiles cleanly.** This is the theme. Nearly every failure
 documented in this repo produced a model that compiled without warnings, loaded,
 and ran at full speed. Treat a successful compile as no evidence at all — the
