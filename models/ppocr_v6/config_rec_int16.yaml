@@ -1,0 +1,33 @@
+# PP-OCRv6 medium recognition, 48x320, ALL int16.
+#
+# Sibling of config_rec.yaml. The only difference is the optimization line:
+# set_all_nodes_int16 forces every node to int16, where the default lets the
+# compiler pick (it chose 162 int8 / 27 int16 / 2 int32).
+#
+# Take this build when recognition accuracy matters. Measured on aspect-fitting
+# crops, int16 matches the float decode on 17/20 vs int8's 8/20, its layer-C
+# cosine is 0.9949 vs int8's 0.9493, and being pure fixed-point it is once again
+# bit-identical at layer B (the mixed int8 build drifted 2e-4 through float CPU
+# ops). Cost: 25.2 MB vs 22.6 MB, and it is slower (unmeasured on board).
+#
+# Pair with ppocr_keys_v6_18710.txt, same as the default build.
+model_parameters:
+  onnx_model: "ppocrv6_medium_rec_48x320.onnx"
+  march: "nash-m"
+  output_model_file_prefix: "ppocrv6_medium_rec_int16_48x320"
+  working_dir: "./out_rec_int16"
+input_parameters:
+  input_name: "x"
+  input_shape: "1x3x48x320"
+  input_type_train: "featuremap"
+  input_type_rt: "featuremap"
+  input_layout_train: "NCHW"
+  norm_type: "no_preprocess"
+calibration_parameters:
+  cal_data_dir: "/ws/cal_rec"
+  calibration_type: "default"
+  optimization: "set_all_nodes_int16"
+compiler_parameters:
+  optimize_level: "O2"
+  compile_mode: "latency"
+  jobs: 16

@@ -156,7 +156,34 @@ Both models were run on an S100P (HBRT 4.7.5):
 
 The two int8 output cosines being below 0.99 is therefore **not** a port
 problem — layer B proves the board matches the host. It is the quantisation
-itself, and it is a real cost for recognition on hard inputs.
+itself, and it is a real cost for recognition.
+
+### int8 vs int16 recognition
+
+How real that cost is, measured properly — on 20 aspect-fitting crops (≤6.7:1,
+so the float decode is clean and the aspect limit is out of the picture), each
+build's board decode compared to the float ONNX decode:
+
+| rec build | matches float | layer C vs ONNX | layer B | hbm |
+|---|---|---|---|---|
+| int8 (default) | **8 / 20** | 0.9493 | cosine 1.0, 2e-4 drift | 22.6 MB |
+| int16 (`config_rec_int16.yaml`) | **17 / 20** | 0.9949 | bit-identical | 25.2 MB |
+
+int16 recovers most of what int8 lost — `IPA→PA`, `Cf→f`, `OTNHO→CT|NHO`,
+`TKing→hKig`, `JRNER→CRNER`, `0RCHARD→0CHARD` all come back. Two things worth
+noting:
+
+- **int16's layer B is bit-identical again.** The default int8 build drifted 2e-4
+  because its mixed int8/int16/int32 graph runs float CPU ops; forcing the whole
+  graph to int16 restores the pure fixed-point path, and the board matches the
+  host exactly. This is the same effect LAS2 (all int16) and det (all int8) show.
+- **The three crops int16 still misses are rare CJK glyphs** (e.g. one 运动场
+  sign) where even int16 differs slightly from float.
+
+**Recommendation:** use `config_rec_int16.yaml` when recognition accuracy
+matters. int8 is fine for easy, well-cropped Latin text; it degrades visibly on
+harder crops. The int16 latency cost is real (bigger instruction stream) but
+unmeasured on the board.
 
 **Still not done:** no latency measurement (needs `hrt_model_exec perf` on a
 quiet board), and no end-to-end accuracy against a labelled page set.

@@ -87,7 +87,7 @@ has been re-run** — each model's README states exactly how far it got, and
 | model | recipe | verified to |
 |---|---|---|
 | [`las2`](models/las2/) — stereo disparity | complete | **full three-layer close-out on the board**: A 0.999954, B bit-identical, C 0.9998. Rebuild differs from the shipped binary (calibration set) |
-| [`ppocr_v6`](models/ppocr_v6/) — OCR det + rec | complete | both compiled and **board-verified**: det layer B bit-identical, rec layer B task-equivalent; layer C shows real int8 character loss on a hard crop (documented, an int16 build is the next experiment) |
+| [`ppocr_v6`](models/ppocr_v6/) — OCR det + rec | complete | compiled and **board-verified**; det layer B bit-identical. Recognition has **both int8 and int16 builds**: on aspect-fitting crops int16 matches the float decode 17/20 vs int8's 8/20, and is bit-identical at layer B |
 
 Recipes still to reconstruct, roughly in cost order: `superres`, `xfeat`,
 `yoloe` (scripts survive intact); `span`, `vitpose` (one piece missing each);

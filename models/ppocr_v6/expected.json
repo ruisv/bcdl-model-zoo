@@ -93,5 +93,26 @@
         "interpretation": "Real int8 loss: board int8 decode drops several characters the float ONNX keeps. On this deliberately hard 48x320 crop (a 19.8:1 line squeezed to 6.7:1) int8 is visibly worse. This is the concrete answer to whether int8 rec is good enough: on hard inputs, not without an int16 comparison."
       }
     }
+  },
+  "int16_recognition": {
+    "why": "int8 recognition drops characters on hard inputs; this quantifies whether int16 is worth it.",
+    "method": "20 aspect-fitting real line crops (<=6.7:1, so float decodes cleanly and the aspect limit is out of the picture). Compare each build's board decode to the float ONNX decode.",
+    "results_vs_float_decode": {
+      "int8_exact_match": "8/20",
+      "int16_exact_match": "17/20"
+    },
+    "layer_C_cosine_vs_onnx": {
+      "int8": 0.9493,
+      "int16": 0.9949
+    },
+    "layer_B": {
+      "int8": "cosine 1.0 but 2e-4 drift (mixed precision has float CPU ops)",
+      "int16": "bit-identical (pure fixed-point path restored)"
+    },
+    "hbm_mb": {
+      "int8": 22.6,
+      "int16": 25.2
+    },
+    "recommendation": "Use the int16 build (config_rec_int16.yaml) when recognition accuracy matters. int8 is fine for easy, well-cropped text; on harder crops it visibly degrades. Latency cost of int16 is unmeasured on the board."
   }
 }
