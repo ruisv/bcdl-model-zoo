@@ -34,10 +34,27 @@
     "measured_onnx": "PASS at 48x960; at 48x320 a 19.8:1 crop loses characters to the aspect squeeze (expected, not a defect)"
   },
   "measured": {
-    "note": "No .hbm has been compiled yet. No quantisation, latency or board figures exist for this model; the cosine values above are gates, not measurements."
+    "note": "Both models compiled to .hbm on OE 3.7.0 (HBRT 4.7.5). All int8 PTQ. Not yet board-run, so no latency or end-to-end accuracy.",
+    "det": {
+      "hbm_mb": 22.4,
+      "output_quantised_cosine": 0.981741,
+      "quantisation": "all int8",
+      "calibration": "24 PaddleOCR dataset sample pages",
+      "gelu_placement": "all 28 GELU nodes ON=BPU (no CPU fallback)"
+    },
+    "rec": {
+      "output_quantised_cosine": 0.974705,
+      "quantisation": "mixed, compiler-chosen: 162 int8 + 27 int16 + 2 int32",
+      "calibration": "64 real line crops, cut from the 24 det pages by the det ONNX",
+      "hbm_mb": 22.6,
+      "node_info_median_cosine": 0.9814,
+      "gelu_placement": "all 25 GELU nodes ON=BPU"
+    },
+    "assessment": "Both output cosines (0.98 det, 0.97 rec) sit below the 0.99 layer-A gate. This is int8 on transformer-ish OCR heads and is expected; DB detection thresholds its probability map and CTC recognition is argmax-per-step, so both tolerate some fidelity loss. Whether that costs real recall / character accuracy is a BOARD question -- compare against an int16 build only if it does. Do not fail these on cosine alone (see CONVERSION.md)."
   },
   "open_questions": [
-    "Erf (GELU) appears in both graphs; cost is unmeasured. node_info.csv cannot settle it -- its ON column shows '--' for fused/non-standalone nodes, which is not evidence of CPU fallback. Measure latency on the board instead.",
-    "Recognition is a transformer-ish SVTR stack; if int8 PTQ degrades, read per-layer cosine only to localise, not to accept or reject (see CONVERSION.md)."
+    "RESOLVED for detection: all 28 GELU (Erf/HzGelu) nodes show ON=BPU in node_info, i.e. no CPU fallback. ON=BPU is trustworthy (unlike ON=--). Latency still unmeasured until board.",
+    "Recognition (SVTR stack) not yet compiled. If int8 output cosine is poor, read per-layer cosine only to localise, then consider int16 -- see CONVERSION.md.",
+    "Detection output cosine 0.98 (int8): compare against an int16 det build if box recall degrades on the board."
   ]
 }

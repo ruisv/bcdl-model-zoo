@@ -126,6 +126,13 @@ int16. Scattered int8/int16 boundaries each need a requant, and that cost
 dominates. **Unless the int16 layers coalesce into large contiguous blocks,
 quantise the whole graph.**
 
+Before hand-writing a mixed-precision config, see what the compiler does on its
+own. With no `optimization` directive, hb_compile already promotes the obviously
+sensitive layers: the PP-OCRv6 recogniser came out 162 int8 / 27 int16 / 2 int32
+without being asked, and the int16 nodes were the LayerNorm-adjacent ones a
+transformer stack needs. Read `Output Data Type` in `node_info.csv` to see the
+split it chose. A manual config is for overriding that, not for discovering it.
+
 Some networks cannot be rescued by bit width at all. OSNet's int8 PTQ compiles
 cleanly and emits well-formed unit vectors whose Market-1501 Rank-1 is 51%
 against the float model's 85%; it needed QAT self-distillation to reach 84.6%.
