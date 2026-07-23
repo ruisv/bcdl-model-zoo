@@ -1,0 +1,32 @@
+# EdgeSAM mask decoder, single-point prompt (sp1). Static graph: exactly 1
+# foreground point (SAM label 1). Three featuremap inputs, all no_preprocess:
+#
+#   image_embeddings [1,256,64,64]  -- MUST be real encoder output, not random
+#   point_coords     [1,1,2]        -- the point, in the 1024 input frame
+#   point_labels     [1,1]          -- {1} = foreground
+#
+# The embedding calibration set comes from running the exported encoder on real
+# images (calib.py --part decoder --encoder-onnx ...). Calibrating the decoder on
+# random embeddings compiles clean and segments to garbage -- the embedding is the
+# distribution the decoder attends against.
+#
+# Per-input fields are `;`-separated and line up positionally with input_name.
+# Shapes are read from the ONNX (static export), so input_shape is omitted.
+model_parameters:
+  onnx_model: "decoder_sp1.onnx"
+  march: "nash-m"
+  working_dir: "./dec_out"
+  output_model_file_prefix: "edge_sam_decoder_sp1_nashm"
+input_parameters:
+  input_name: "image_embeddings;point_coords;point_labels"
+  input_type_rt: "featuremap;featuremap;featuremap"
+  input_type_train: "featuremap;featuremap;featuremap"
+  norm_type: "no_preprocess;no_preprocess;no_preprocess"
+calibration_parameters:
+  cal_data_dir: "/ws/dec_cal/image_embeddings;/ws/dec_cal/point_coords;/ws/dec_cal/point_labels"
+  cal_data_type: "float32;float32;float32"
+  calibration_type: "default"
+compiler_parameters:
+  optimize_level: "O2"
+  compile_mode: "latency"
+  jobs: 32

@@ -1,0 +1,30 @@
+# EdgeSAM mask decoder, box prompt (bp2). Static graph: exactly 2 points encoding
+# a box's two corners (SAM labels 2 = top-left, 3 = bottom-right). Same three
+# featuremap inputs as sp1, only the point count differs:
+#
+#   image_embeddings [1,256,64,64]  -- MUST be real encoder output, not random
+#   point_coords     [1,2,2]        -- box corners, in the 1024 input frame
+#   point_labels     [1,2]          -- {2,3} = box top-left, bottom-right
+#
+# A separate compiled decoder from sp1 purely because the BPU graph is static and
+# the prompt arity is baked in at export time. Same embedding-must-be-real rule
+# applies (calib.py --part decoder --encoder-onnx ...). Its own calibration dir
+# (/ws/bp_cal) so the two builds never share samples.
+model_parameters:
+  onnx_model: "decoder_bp2.onnx"
+  march: "nash-m"
+  working_dir: "./dec_bp_out"
+  output_model_file_prefix: "edge_sam_decoder_bp2_nashm"
+input_parameters:
+  input_name: "image_embeddings;point_coords;point_labels"
+  input_type_rt: "featuremap;featuremap;featuremap"
+  input_type_train: "featuremap;featuremap;featuremap"
+  norm_type: "no_preprocess;no_preprocess;no_preprocess"
+calibration_parameters:
+  cal_data_dir: "/ws/bp_cal/image_embeddings;/ws/bp_cal/point_coords;/ws/bp_cal/point_labels"
+  cal_data_type: "float32;float32;float32"
+  calibration_type: "default"
+compiler_parameters:
+  optimize_level: "O2"
+  compile_mode: "latency"
+  jobs: 32

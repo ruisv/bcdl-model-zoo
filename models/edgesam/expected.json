@@ -1,0 +1,60 @@
+{
+  "model": "edgesam (EdgeSAM promptable segmentation)",
+  "upstream": "EdgeSAM (chongzhou96/EdgeSAM) — RepViT image encoder + SAM two-way mask decoder, distilled from SAM",
+  "march": "nash-m",
+  "licence": "TIER D — EdgeSAM upstream terms NOT yet reviewed. This directory is a recipe only; review the upstream licence and the weights' terms before compiling for redistribution or shipping a .hbm.",
+  "split": "One image encoder (run once per image) + two fixed-prompt mask decoders (run per prompt). sp1 = 1 foreground point; bp2 = a box as 2 corner points. The encoder/decoder split and the fixed prompt arities are the BPU adaptation; the model itself is upstream.",
+  "toolchain": {
+    "openexplorer": "3.7.0",
+    "hbdk": "4.7.5",
+    "board_system": "4.0.5",
+    "note": "Recorded so a future failure can be attributed. The host HBDK and the board HBRT must match; 3.7.0 host pairs with 4.0.5 board. NOT confirmed against a fresh rebuild — no toolchain run survived for this model."
+  },
+  "cosine": {
+    "A": 0.99,
+    "B": 1.0,
+    "C": 0.99,
+    "note": "Gates, not measurements — nothing was re-run here. Run A/C per sub-model. Layer C for the pipeline is honestly the mask IoU between the float SAM decode and the board decode on a held-out prompt set, not just an embedding/logit cosine: a plausible embedding cosine does not prove the mask survives (same failure mode as OSNet). For the decoders, layer C must be fed REAL encoder embeddings, never random tensors."
+  },
+  "submodels": {
+    "encoder": {
+      "onnx": "edge_sam_encoder_bpu.onnx",
+      "prefix": "edge_sam_encoder_nashm",
+      "input": "raw_image [1,3,1024,1024] (featuremap, no_preprocess — SAM normalise baked into the graph; board feeds raw pixels after resize-longest-side-1024 + pad)",
+      "output": "image_embeddings [1,256,64,64] (SAM-standard embedding dimension)",
+      "quantisation": "compiler default (no optimization directive). RepViT is a CNN — no LayerNorm-precision concern. Not independently verified here.",
+      "note": "The heavy sub-model; runs once per image. Shapes are SAM-standard (1024 input, 256x64x64 embedding); not re-measured from a fresh export here."
+    },
+    "decoder_sp1": {
+      "onnx": "decoder_sp1.onnx",
+      "prefix": "edge_sam_decoder_sp1_nashm",
+      "inputs": "image_embeddings [1,256,64,64]; point_coords [1,1,2]; point_labels [1,1] (label {1} = foreground)",
+      "outputs": "scores [1,K]; masks [1,K,256,256] low-res mask logits — upsample to the original frame is CPU post-processing (orig_im_size resize removed from the graph). K is the SAM candidate count; not re-measured here.",
+      "quantisation": "compiler default. Not independently verified here."
+    },
+    "decoder_bp2": {
+      "onnx": "decoder_bp2.onnx",
+      "prefix": "edge_sam_decoder_bp2_nashm",
+      "inputs": "image_embeddings [1,256,64,64]; point_coords [1,2,2]; point_labels [1,2] (labels {2,3} = box top-left, bottom-right)",
+      "outputs": "scores [1,K]; masks [1,K,256,256] low-res mask logits — upsample on the CPU as above.",
+      "quantisation": "compiler default. Not independently verified here.",
+      "note": "Identical to sp1 except the prompt arity (2 points vs 1). A separate compiled decoder because the BPU graph is static."
+    }
+  },
+  "measured": {
+    "note": "NO on-board latency / FPS / cosine / IoU figures survived in the salvage material for any of the three sub-models. Left null on purpose — do not invent them. Measure on an S100P with hrt_model_exec on a quiet board and fill in per sub-model.",
+    "encoder": {"hbm_bytes": null, "latency_ms": null, "fps": null, "cosine_vs_fp32": null},
+    "decoder_sp1": {"hbm_bytes": null, "latency_ms": null, "fps": null, "cosine_vs_fp32": null},
+    "decoder_bp2": {"hbm_bytes": null, "latency_ms": null, "fps": null, "cosine_vs_fp32": null}
+  },
+  "task_metric": {
+    "name": "mask IoU vs the float EdgeSAM decode on a held-out image + prompt set (sp1 point prompts and bp2 box prompts scored separately)",
+    "protocol": "Encode each held-out image once with the board encoder; for each prompt run the matching board decoder, upsample the low-res mask on the CPU, and compare against the float EdgeSAM (encoder+decoder) mask at the same prompt. Report mean IoU per build.",
+    "threshold": null,
+    "measured": null,
+    "note": "No board-measured IoU survived. The reference decode is the upstream float EdgeSAM pipeline; the acceptance numbers were never recorded here."
+  },
+  "board_verification": {
+    "note": "Not run in this repo. The recipe reconstructs the export split (encoder + two fixed-prompt decoders), the featuremap/no_preprocess input contract, and — the load-bearing part — the multi-input decoder calibration that feeds REAL encoder embeddings plus sampled prompts. The three-layer close-out (A/B/C) and the IoU task metric still need to be run and recorded on an S100P."
+  }
+}
