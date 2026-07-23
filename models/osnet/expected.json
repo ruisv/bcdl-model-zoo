@@ -1,0 +1,85 @@
+{
+  "model": "osnet_ain_qat_nashm_256x128",
+  "upstream": "torchreid OSNet-AIN (osnet_ain_x1_0), trained on MSMT17",
+  "input_shape": "1x3x256x128",
+  "output_shape": "1x512x1x1",
+  "quantisation": "int8, via QAT self-distillation (not PTQ)",
+  "march": "nash-m",
+  "licence": "torchreid is MIT; the OSNet-AIN pretrained weights' terms are not yet reviewed — check before redistribution",
+  "toolchain": {
+    "openexplorer": "3.7.0",
+    "hbdk": "4.7.5",
+    "board_system": "4.0.5",
+    "note": "QAT uses horizon_plugin_pytorch inside the OE container; the .hbm is produced by hbdk4.compiler convert+compile, not hb_compile."
+  },
+  "cosine": {
+    "A": 0.97,
+    "B": 1.0,
+    "C": 0.97,
+    "note": "COSINE IS NOT THE GATE FOR THIS MODEL. A degraded ReID tower still emits well-formed unit vectors: int8 PTQ here holds a cosine that does not scream 'broken' while Rank-1 falls to 51%. The real acceptance is task_metric below. Layer A for a QAT model compares the quantized graph to the FP32 teacher (there is no separate quantized ONNX)."
+  },
+  "task_metric": {
+    "name": "Market-1501 single-query Rank-1 / mAP, cross-domain (weights from MSMT17, scored on Market-1501)",
+    "protocol": "100-identity subset, fixed seed; same-camera same-id excluded; distractors/junk dropped. Board and host run the identical subset via market.py --bundle.",
+    "threshold": "Rank-1 >= 84% (float baseline 84.84)",
+    "measured": {
+      "float_onnx_rank1": 0.8484,
+      "qat_hbm_rank1": 0.8462,
+      "note": "mAP of the QAT build is on par with or slightly above the float baseline on this subset. The Rank-1 gap of 0.2 pt is within subset noise."
+    }
+  },
+  "measured": {
+    "note": "From the original M10 adaptation on S100P (HBRT 4.7.5), the SHIPPED QAT build. Latency from hrt_model_exec on a quiet board.",
+    "hbm_mb": 6.6,
+    "latency_ms_per_crop": 0.82,
+    "fps": 1220,
+    "board_vs_fp32_cosine": 0.9799,
+    "fake_quant_nodes": 399,
+    "fake_quant_prepare": "one pass, no operator-coverage gaps — a pure CNN, unlike attention stacks"
+  },
+  "qat_recipe": {
+    "why": "int8 PTQ is unusable on this network; QAT self-distillation is the only build that works.",
+    "supervision": "FP32 teacher, no identity labels — loss = 1 - cos(student, teacher). A function-matching problem, not identity learning.",
+    "loss_choice": "cosine, not L2: the embedding is L2-normalized before use, so its magnitude is not in the contract.",
+    "data": "~11k unlabelled COCO + KITTI person crops (crops.py). Market-1501 is never trained on.",
+    "schedule": "6-8 epochs, ~20 min on one GPU. cosine-vs-FP32 climbs 0.40 -> 0.978.",
+    "offline_fidelity": "The QAT (fake-quant) graph reproduces the board's failure in torch (cosine 0.5049 torch vs 0.475 board), so tuning iterates in seconds against the number the board will show."
+  },
+  "rejected_builds": [
+    {
+      "name": "int8 PTQ, osnet_ain_x1_0 (config.yaml)",
+      "rank1": 0.514,
+      "why": "Compiles clean, returns plausible unit vectors, ranks at 51% vs float 85%. This is the whole reason QAT exists. Reproduce with calib.py + config.yaml."
+    },
+    {
+      "name": "int8 PTQ, plain-BN osnet_x1_0",
+      "rank1": 0.066,
+      "why": "Counter-intuitive: dropping InstanceNorm makes quantisation FAR worse. IN is a quantisation asset here, not a liability."
+    },
+    {
+      "name": "int8 PTQ, osnet_ibn_x1_0",
+      "rank1": 0.052,
+      "why": "Also collapses. Neither calibration method (modelwise/max) nor set size (64->400 crops; 400 was slightly worse) rescued any int8 variant."
+    },
+    {
+      "name": "different backbone (ResNet50) to dodge the problem",
+      "rank1_float": 0.463,
+      "why": "ResNet50's float cross-domain Rank-1 (46.3) is far below OSNet-AIN's (70.1 full test set). Changing backbone loses more than quantisation ever did."
+    },
+    {
+      "name": "convert_fx to lower the QAT graph in PyTorch",
+      "why": "Dead end: quantized InstanceNorm and AdaptiveAvgPool2d both reduce over dim=(2,3), which the plugin's quantized mean has no path for. Use the vendor HBIR convert flow instead (deploy.py)."
+    }
+  ],
+  "board_verification": {
+    "date": "original M10 adaptation",
+    "board": "S100P",
+    "hbrt": "4.7.5",
+    "layer_C_hbm_vs_fp32": {
+      "cosine": 0.9799,
+      "verdict": "PASS on the task metric — Rank-1 84.62 vs 84.84 float",
+      "note": "Bit-identity (layer B) is not claimed: the converted graph carries float CPU ops, like the ppocr rec build. Task equivalence (Rank-1) is the right layer-B/C check for a ReID embedding."
+    },
+    "note": "These are the shipped-build numbers from the original adaptation. A from-scratch rebuild through this recipe has not been re-verified in this repo; the calibration crop set and QAT seed reproduce the method, not necessarily the exact binary."
+  }
+}

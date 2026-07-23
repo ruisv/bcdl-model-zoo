@@ -84,13 +84,14 @@ has been re-run** — each model's README states exactly how far it got, and
 |---|---|---|
 | [`las2`](models/las2/) — stereo disparity | complete | **full three-layer close-out on the board**: A 0.999954, B bit-identical, C 0.9998. Rebuild differs from the shipped binary (calibration set) |
 | [`ppocr_v6`](models/ppocr_v6/) — OCR det + rec | complete | compiled and **board-verified**; det layer B bit-identical. Recognition in **four builds** (320/960 × int8/int16); int16 halves the character error at both widths and 960 int16 decodes long lines near-perfectly (79-char sentence exact). Preprocessing corrected to aspect-preserving pad |
+| [`osnet`](models/osnet/) — person ReID | complete | **the first task-metric recipe**: int8 PTQ collapses (Rank-1 51% vs 85%) so the shipped build is **QAT self-distillation** — no labels, ~20 min, Rank-1 recovered to 84.6%. Board-validated in the original M10 work (cosine 0.9799, 0.82 ms/crop). Includes a reproducible int8-collapse path |
 
 Recipes still to reconstruct, roughly in cost order: `superres`, `xfeat`,
 `yoloe` (scripts survive intact); `span`, `vitpose` (one piece missing each);
 `face`, `edgesam` (recoverable by diffing the derived ONNX against its parent);
-`pidnet`, `yolop`, `osnet` (the three whose write-ups are worth the most);
-`yolo26` (hardest — its compile config was never saved and must be reconstructed
-from the compile log).
+`pidnet`, `yolop` (the two remaining high-value write-ups); `yolo26` (hardest —
+its compile config was never saved and must be reconstructed from the compile
+log).
 
 ## Licence
 
