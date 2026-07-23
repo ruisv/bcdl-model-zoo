@@ -1,0 +1,31 @@
+# YOLOP, decode CUT off the graph. This is the build that works.
+#
+# The uncut graph (yolop-640-640.onnx compiled as-is) bakes the anchor decode
+# via ScatterND. It compiles WITHOUT ERROR and returns detections whose
+# objectness/class columns are never written — a silent, total detector failure.
+# export.py cuts before the decode and emits the three raw heads; BCDL decodes.
+#
+# nv12 input at runtime, rgb at train/calibration. data_mean_and_scale carries
+# ImageNet normalisation (mean in 0-255, scale = 1/(std*255)); calib.py hands the
+# packer raw 0-255 RGB and it applies exactly this.
+model_parameters:
+  onnx_model: "yolop_cut.onnx"
+  march: "nash-m"
+  working_dir: "./out_cut"
+  output_model_file_prefix: "yolop_cut_nashm_640x640_nv12"
+input_parameters:
+  input_name: "images"
+  input_shape: "1x3x640x640"
+  input_type_train: "rgb"
+  input_type_rt: "nv12"
+  input_layout_train: "NCHW"
+  norm_type: "data_mean_and_scale"
+  mean_value: "123.675 116.28 103.53"
+  scale_value: "0.01712475 0.017507 0.01742919"
+calibration_parameters:
+  cal_data_dir: "/ws/cal_norm/images"
+  calibration_type: "default"
+compiler_parameters:
+  optimize_level: "O2"
+  compile_mode: "latency"
+  jobs: 32

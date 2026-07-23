@@ -1,0 +1,34 @@
+# PIDNet-S real-time semantic segmentation, 2048x1024, Cityscapes 19 classes.
+# This is the `_v3` build: calibrated on PRE-NORMALISED data. That is the whole
+# difference from the earlier builds, and it is why this one works.
+#
+# data_mean_and_scale carries ImageNet normalisation (mean in 0-255, scale =
+# 1/(std*255)). calib.py hands the packer raw 0-255 RGB and it applies exactly
+# this, so the calibration distribution matches the runtime distribution. Do NOT
+# feed un-normalised calibration data here: with cal_data_type float32 the
+# compiler does not normalise it for you, the thresholds come out wrong, and the
+# model compiles clean and segments to noise (see calib.py, README).
+#
+# The ONNX takes RAW pixels (pidnet_op19_nonorm.onnx) — normalisation lives here,
+# not in the graph.
+model_parameters:
+  onnx_model: "pidnet_op19_nonorm.onnx"
+  march: "nash-m"
+  working_dir: "./out_v3"
+  output_model_file_prefix: "pidnet_s_nashm_1024x2048_nv12_v3"
+input_parameters:
+  input_name: "image"
+  input_shape: "1x3x1024x2048"
+  input_type_train: "rgb"
+  input_type_rt: "nv12"
+  input_layout_train: "NCHW"
+  norm_type: "data_mean_and_scale"
+  mean_value: "123.675 116.28 103.53"
+  scale_value: "0.01712475 0.017507 0.01742919"
+calibration_parameters:
+  cal_data_dir: "/ws/cal_norm/image"
+  calibration_type: "default"
+compiler_parameters:
+  optimize_level: "O2"
+  compile_mode: "latency"
+  jobs: 32

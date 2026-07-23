@@ -1,0 +1,34 @@
+{
+  "model": "pidnet_s_nashm_1024x2048_nv12_v3",
+  "upstream": "PIDNet-S (XuJiacong/PIDNet), Cityscapes",
+  "input_shape": "1x3x1024x2048",
+  "input_format": "nv12 at runtime, rgb at train/calibration; RAW pixels into the graph",
+  "output": "seg logits, 19 Cityscapes classes; BCDL takes the argmax",
+  "quantisation": "int8",
+  "march": "nash-m",
+  "licence": "PIDNet upstream terms (check XuJiacong/PIDNet before redistribution)",
+  "toolchain": {
+    "openexplorer": "3.7.0",
+    "note": "ONNX exported at opset 19 so the bilinear Resize lowers cleanly. Normalisation is NOT in the graph — the config applies it."
+  },
+  "cosine": {
+    "A": 0.99,
+    "B": 1.0,
+    "C": 0.99
+  },
+  "the_v3_fix": {
+    "trap": "Earlier builds calibrated on data that was NOT pre-normalised. With cal_data_type float32 the compiler's norm_type does not apply to calibration data, so the activation thresholds were gathered on a distribution the deployed model never sees.",
+    "symptom": "Compiles without a single warning, loads, runs at full speed, segments to noise. No loud signal.",
+    "fix": "Calibrate on pre-normalised data, produced only through common/calib_pack.py (which applies the config's data_mean_and_scale). Pair it with the no-norm ONNX so normalisation happens exactly once, in the config.",
+    "also": "An even earlier build (`data_scale` 1/255, no mean subtraction) put the model on a half-normalised input — same clean-compile failure mode, different missing step."
+  },
+  "task_metric": {
+    "name": "Cityscapes mIoU (19 classes)",
+    "threshold": null,
+    "note": "The right acceptance for a segmenter is mIoU on a labelled val set, not a cosine on the logits — a shifted-input model still emits well-formed logits. Not re-measured in this repo."
+  },
+  "measured": {
+    "note": "Not re-measured here. The shipped `_v3` build is board-validated in BCDL's real-time semantic-seg path; latency lives in BCDL's benchmark results."
+  },
+  "status": "RECONSTRUCTED. The original export script was not recovered; export.py reproduces the method from the surviving config (pidnet_op19_nonorm.onnx, opset 19, raw-pixel input, data_mean_and_scale) and the upstream PIDNet-S inference forward. calib.py's pre-normalisation is the load-bearing, recoverable part and is faithful. Verify the seg-output resolution against your PIDNet checkout. Not re-run through the toolchain in this repo."
+}

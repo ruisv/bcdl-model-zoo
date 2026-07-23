@@ -1,0 +1,30 @@
+{
+  "model": "yolop_cut_nashm_640x640_nv12",
+  "upstream": "YOLOP (hustvl/YOLOP), yolop-640-640.onnx release asset",
+  "input_shape": "1x3x640x640",
+  "input_format": "nv12 at runtime, rgb at train/calibration",
+  "outputs": "3 raw detection heads [1,18,{80,40,20},{80,40,20}] + drivable-area seg [1,2,640,640] + lane-line seg [1,2,640,640]",
+  "quantisation": "int8",
+  "march": "nash-m",
+  "licence": "YOLOP upstream terms not yet reviewed — check hustvl/YOLOP before redistribution",
+  "toolchain": {
+    "openexplorer": "3.7.0",
+    "note": "The parent ONNX is downloaded, not re-exported (byte-identical to the upstream release asset). export.py only cuts the anchor decode."
+  },
+  "cosine": {
+    "A": 0.99,
+    "B": 1.0,
+    "C": 0.99,
+    "note": "Cosine is measured per output tensor. The detection heads are raw conv outputs; the real acceptance for detection is boxes-after-decode, which is a BCDL-side check, not a cosine on the head tensor."
+  },
+  "the_cut": {
+    "why": "The uncut graph bakes the anchor decode with ScatterND. It compiles WITHOUT ERROR and the objectness/class columns of the detection output are never written — every box comes back zero-confidence. This is a silent, total detector failure on a clean compile.",
+    "fix": "Cut the graph before the decode; emit the 3 raw detection heads and decode on the CPU in BCDL. The two segmentation heads are unaffected and pass straight through.",
+    "general_lesson": "When a head's decode does not survive quantised lowering, keep the conv trunk on the BPU and move the postprocess arithmetic to the host."
+  },
+  "task_metric": null,
+  "measured": {
+    "note": "Not re-measured in this repo. The shipped build is board-validated in BCDL's panoptic-driving example; latency/accuracy live in BCDL's benchmark results, not here."
+  },
+  "status": "Recipe reconstructs the cut from the known YOLOP graph structure (three 18-channel detection-head convs at strides 8/16/32, discovered by shape). export.py has been written to survive a re-download of the release ONNX; --det-heads overrides the discovery if a future release renames tensors. Not re-run through the toolchain in this repo."
+}
