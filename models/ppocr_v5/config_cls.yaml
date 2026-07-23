@@ -1,0 +1,29 @@
+# PP-OCRv5 textline angle classification, 80x160 -> 1x2 (0 deg / 180 deg).
+#
+# PP-LCNet_x1_0_textline_ori. This is the reason the v5 directory exists: PP-OCRv6
+# ships no angle classifier, so this cls model stays in service alongside v6's
+# det/rec. It decides whether a detected line is upright or flipped 180 degrees
+# before recognition.
+#
+# featuremap / no_preprocess matches det/rec so the runtime's OCR preprocessing
+# path is uniform. Normalisation ((x/255-0.5)/0.5, aspect-preserving pad) lives
+# in calib.py -- see that file's docstring.
+model_parameters:
+  onnx_model: "ppocrv5_lcnet_cls_80x160.onnx"
+  march: "nash-m"
+  output_model_file_prefix: "ppocrv5_lcnet_cls_80x160"
+  working_dir: "./out_cls"
+input_parameters:
+  input_name: "x"
+  input_shape: "1x3x80x160"
+  input_type_train: "featuremap"
+  input_type_rt: "featuremap"
+  input_layout_train: "NCHW"
+  norm_type: "no_preprocess"
+calibration_parameters:
+  cal_data_dir: "/ws/cal_cls"
+  calibration_type: "default"
+compiler_parameters:
+  optimize_level: "O2"
+  compile_mode: "latency"
+  jobs: 8

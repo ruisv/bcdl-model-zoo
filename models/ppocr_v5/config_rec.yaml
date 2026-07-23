@@ -1,0 +1,28 @@
+# PP-OCRv5 server recognition, 48x320 -> T timesteps x ~18385 classes.
+#
+# Pair the .hbm with the ppocr_keys_v5_<N>.txt written by export.py, where N is
+# the model's real output width. A dictionary of the wrong class count decodes
+# to confident nonsense -- export.py asserts N against the ONNX output.
+#
+# featuremap / no_preprocess matches PP-OCRv6 so the runtime's existing OCR
+# preprocessing path works unchanged. The consequence is that the normalisation
+# contract lives in calib.py rather than here -- see that file's docstring.
+model_parameters:
+  onnx_model: "ppocrv5_server_rec_48x320.onnx"
+  march: "nash-m"
+  output_model_file_prefix: "ppocrv5_server_rec_48x320"
+  working_dir: "./out_rec"
+input_parameters:
+  input_name: "x"
+  input_shape: "1x3x48x320"
+  input_type_train: "featuremap"
+  input_type_rt: "featuremap"
+  input_layout_train: "NCHW"
+  norm_type: "no_preprocess"
+calibration_parameters:
+  cal_data_dir: "/ws/cal_rec"
+  calibration_type: "default"
+compiler_parameters:
+  optimize_level: "O2"
+  compile_mode: "latency"
+  jobs: 8

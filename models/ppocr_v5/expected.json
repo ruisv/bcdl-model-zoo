@@ -1,0 +1,72 @@
+{
+  "model": "ppocrv5_server_det_960x960 + ppocrv5_server_rec_48x320 + ppocrv5_lcnet_cls_80x160",
+  "upstream": "PaddleOCR PP-OCRv5 (det + rec) + PP-LCNet_x1_0_textline_ori (cls)",
+  "licence": "Apache-2.0",
+  "march": "nash-m",
+  "why_v5_alongside_v6": "PP-OCRv6 ships no angle classifier, so the v5-only PP-LCNet textline-orientation cls is still used. v5 det/rec are kept as a documented fallback to v6 (see ../ppocr_v6/README.md).",
+  "toolchain": {
+    "openexplorer": "3.7.0",
+    "note": "v5 ships ONLY Paddle inference models, so export needs paddle2onnx + paddle2onnx.optimize (shape fix) before onnxslim. This is unlike v6, which publishes ONNX directly."
+  },
+  "shapes": {
+    "det": {
+      "input": "1x3x960x960",
+      "output": "1x1x960x960"
+    },
+    "rec": {
+      "input": "1x3x48x320",
+      "output": "1xTx18385",
+      "note": "T (timesteps) and the class dim are read from the exported ONNX. 18385 = charset + blank + space is the expected v5 server width; export.py asserts it and derives the dictionary file name from the real value. VERIFY against the model -- not confirmed from a surviving artifact."
+    },
+    "cls": {
+      "input": "1x3x80x160",
+      "output": "1x2",
+      "note": "PP-LCNet textline orientation: class 0 = upright, class 1 = 180 deg."
+    }
+  },
+  "dictionary": {
+    "file": "ppocr_keys_v5_18385.txt",
+    "entries": 18385,
+    "layout": "line 0 = 'blank' placeholder, then characters, then a trailing space",
+    "warning": "Applies to rec only. The entry count must equal the rec output width; export.py asserts it against the ONNX. 18385 is the expected v5 server value (charset + blank + space) but was reconstructed from prior notes, not from a surviving dictionary -- confirm at export.",
+    "reconstructed": true
+  },
+  "cosine": {
+    "A": 0.99,
+    "B": 1.0,
+    "C": 0.99
+  },
+  "task_metric": {
+    "name": "greedy CTC decode (rec) matches PaddleOCR output on the same crop; cls agrees with the upright/flipped label",
+    "threshold": "character-exact for rec; class-exact for cls",
+    "measured": null
+  },
+  "measured": {
+    "note": "No per-model measured numbers (cosine, hbm size, latency) survived in the salvage for v5 -- only the three hb_compile configs and the (rotted) export scripts. v5 was converted and run end to end in the original OCR work, but those figures were not recovered, so they are left null rather than fabricated. For the shared DB-detection and CTC-recognition behaviour, the v6 recipe (../ppocr_v6/) is the measured reference: v6 det compiled all-int8 at ~22 MB (output cosine ~0.982, board layer B bit-identical) and its recogniser is a transformer-ish stack where all-int16 beat the compiler's default mixed precision on accuracy, size AND latency. Expect v5 to behave similarly.",
+    "det": {
+      "hbm_mb": null,
+      "output_quantised_cosine": null,
+      "quantisation": null,
+      "calibration": null
+    },
+    "rec": {
+      "hbm_mb": null,
+      "output_quantised_cosine": null,
+      "quantisation": null,
+      "calibration": null
+    },
+    "cls": {
+      "hbm_mb": null,
+      "output_quantised_cosine": null,
+      "quantisation": null,
+      "calibration": null
+    },
+    "assessment": "Recipe reconstructed from the salvaged configs and export scripts; not re-run through the toolchain here. The load-bearing fix is the export path (see README trap #1): the salvaged det script pointed at a seal detector and the shape-fix was commented out for det and rec. Once export is correct, det/rec/cls compile as featuremap/no_preprocess exactly like v6, so v6's measured numbers are the closest available reference. Do not accept these on cosine alone -- rec has a character-exact task metric (see ../../CONVERSION.md#verification)."
+  },
+  "open_questions": [
+    "rec class count: confirm the v5 server charset width (expected 18385). export.py asserts dictionary entries == ONNX output width, so a wrong pairing fails at export rather than at read time.",
+    "rec bit width: v6's recogniser was best all-int16 (halved character error, smaller AND faster than compiler-default mixed precision). Measure set_all_nodes_int16 on v5 rec before accepting the default mix -- see ../../CONVERSION.md#choosing-a-bit-width.",
+    "cls preprocessing: implemented as PaddleOCR's resize_norm_img_cls (aspect-preserving resize to H=80 then right-pad to W=160, (x/255-0.5)/0.5). Confirm against the deployed runtime's cls preprocessing.",
+    "No board close-out reconstructed for v5; latency and end-to-end accuracy unmeasured here."
+  ]
+}
