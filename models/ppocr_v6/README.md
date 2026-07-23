@@ -35,21 +35,28 @@ characters in upstream order, then a trailing space — so the line count equals
 the class count. PaddleOCR itself stores only the characters and adds blank and
 space at runtime; the +2 is applied during export.
 
-**2. 48×320 silently truncates long lines.** The recogniser sees a fixed
-320-wide input, i.e. a 6.7:1 aspect. Feed it a crop longer than that and the
-squeeze merges characters — the decode does not fail, it just drops some.
-Measured on a 48×951 crop (19.8:1):
+**2. 48×320 silently truncates long lines, and this is separate from
+quantisation.** The recogniser sees a fixed 320-wide input, i.e. a 6.7:1 aspect.
+Feed it a crop longer than that and the squeeze merges characters — the decode
+does not fail, it just drops some. This is a **float** effect, with no
+quantisation involved. Measured on a 48×951 crop (19.8:1), decoding the float
+ONNX:
 
-| rec width | timesteps | decoded |
+| model | rec width | chars emitted (truth = 30) |
 |---|---|---|
-| 320 | 40 | `1030520250215/20240427A026` |
-| 960 | 120 | `1018308520250215/20240427A0226` ✅ |
+| v6 float | 320 | 26 — drops 4 |
+| v5 float | 320 | 17 — drops 13 |
+| v6 float | 960 | 30 — exact |
 
-The 960 result is character-exact against PaddleOCR's own output. **This is not
-a v6 regression — v5 at 48×320 has the same limit.** If your lines are long,
-compile a wider recogniser, but note the `.hbm` grows with input area: 48×960 is
-3× the area of 48×320 for the same per-character work. Splitting long lines
-upstream of the recogniser is usually the better trade.
+Both float models drop characters at 320; the fix is width, not precision. **This
+is not a v6 regression — v5 has the same limit, worse.** If your lines are long,
+either split them upstream of the recogniser or compile a wider one, but note the
+`.hbm` grows with input area: 48×960 is 3× the area of 48×320.
+
+The practical consequence for **evaluating quantisation**: never measure int8 vs
+int16 on a crop wider than 6.7:1, or the aspect loss swamps the quantisation
+signal. The board section below uses aspect-fitting crops for exactly this
+reason.
 
 **3. Normalisation is not in `config.yaml`.** Both models compile as
 `featuremap` / `no_preprocess`, matching v5 so the runtime's OCR path needs no
