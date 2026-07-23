@@ -1,0 +1,30 @@
+# SCRFD-10G face detection, 640x640, NV12 input.
+#
+# Detection compiles as rgb / data_mean_and_scale, so the normalisation lives
+# HERE (mean 127.5, scale 0.0078125 == 1/128) and calib_pack applies it to the
+# calibration data straight from this file -- the two cannot drift.
+#
+# input_type_rt is nv12 (what the board's camera path feeds); input_type_train
+# is rgb (what the graph was trained on). Nine raw per-stride heads come out
+# (score/bbox/kps x strides 8/16/32); BCDL decodes them.
+model_parameters:
+  onnx_model: "scrfd_10g_640.onnx"
+  march: "nash-m"
+  output_model_file_prefix: "scrfd_10g_nashm_640x640_nv12"
+  working_dir: "./out_det"
+input_parameters:
+  input_name: "input.1"
+  input_shape: "1x3x640x640"
+  input_type_train: "rgb"
+  input_type_rt: "nv12"
+  input_layout_train: "NCHW"
+  norm_type: "data_mean_and_scale"
+  mean_value: "127.5 127.5 127.5"
+  scale_value: "0.0078125 0.0078125 0.0078125"
+calibration_parameters:
+  cal_data_dir: "/ws/cal_det"
+  calibration_type: "default"
+compiler_parameters:
+  optimize_level: "O2"
+  compile_mode: "latency"
+  jobs: 32

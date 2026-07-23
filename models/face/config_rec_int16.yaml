@@ -1,0 +1,33 @@
+# ArcFace R50 face recognition, 112x112, ALL int16.
+#
+# Sibling of config_rec.yaml -- same aligned calibration, same graph. The only
+# difference is the optimization line: set_all_nodes_int16 forces every node to
+# int16 instead of letting the compiler pick a mix.
+#
+# Why an int16 rec build exists: a recognition embedding's cosine-vs-float can
+# look fine while the verification/identification task quietly degrades (the same
+# trap osnet documents for ReID and ppocr for CTC). int16 recovers embedding
+# fidelity; the honest gate is a face-verification / ROC metric on the board, not
+# the cosine. And, as on las2/ppocr, all-int16 is one contiguous fixed-point
+# stream with no int8<->int16 requant, so it is often FASTER than the mixed
+# default as well as more faithful. Measure both on the board.
+model_parameters:
+  onnx_model: "arcface_r50_112.onnx"
+  march: "nash-m"
+  output_model_file_prefix: "arcface_r50_aligned_int16_nashm_112x112"
+  working_dir: "./out_rec_int16"
+input_parameters:
+  input_name: "input.1"
+  input_shape: "1x3x112x112"
+  input_type_train: "featuremap"
+  input_type_rt: "featuremap"
+  input_layout_train: "NCHW"
+  norm_type: "no_preprocess"
+calibration_parameters:
+  cal_data_dir: "/ws/cal_rec"
+  calibration_type: "default"
+  optimization: "set_all_nodes_int16"
+compiler_parameters:
+  optimize_level: "O2"
+  compile_mode: "latency"
+  jobs: 32

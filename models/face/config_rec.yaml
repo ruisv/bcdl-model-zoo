@@ -1,0 +1,30 @@
+# ArcFace R50 face recognition, 112x112, int8. This is the shipped rec build.
+#
+# featuremap / no_preprocess: the compiler applies NO normalisation, so the
+# (x-127.5)/128 -> [-1,1] scaling is baked into the calibration arrays by
+# calib.py, not declared here. Same pattern as osnet and ppocr featuremap inputs.
+#
+# `_aligned` is load-bearing, not decoration: this build is calibrated on ALIGNED
+# 112x112 chips (insightface norm_crop), NOT centre-crops of detector boxes. A
+# centre-crop calibration is a different, silently-worse file -- see README and
+# calib.py. int16 sibling: config_rec_int16.yaml (recommended when the embedding
+# has to survive quantisation; see README).
+model_parameters:
+  onnx_model: "arcface_r50_112.onnx"
+  march: "nash-m"
+  output_model_file_prefix: "arcface_r50_aligned_nashm_112x112"
+  working_dir: "./out_rec"
+input_parameters:
+  input_name: "input.1"
+  input_shape: "1x3x112x112"
+  input_type_train: "featuremap"
+  input_type_rt: "featuremap"
+  input_layout_train: "NCHW"
+  norm_type: "no_preprocess"
+calibration_parameters:
+  cal_data_dir: "/ws/cal_rec"
+  calibration_type: "default"
+compiler_parameters:
+  optimize_level: "O2"
+  compile_mode: "latency"
+  jobs: 32

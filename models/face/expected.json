@@ -1,0 +1,98 @@
+{
+  "model": "scrfd_10g_nashm_640x640_nv12 + arcface_r50_aligned_nashm_112x112",
+  "upstream": "insightface buffalo_l pack: SCRFD-10G (det_10g.onnx) + ArcFace R50 (w600k_r50.onnx)",
+  "provenance": "Not a torch export. Both ONNX are pre-exported inside the buffalo_l pack; export.py locates them and applies a tiny static-shape edit. arcface_r50_112.onnx is w600k_r50.onnx with only the input dims fixed (a few bytes).",
+  "licence": {
+    "tier": "C — non-commercial",
+    "detail": "insightface CODE is MIT, but the pretrained buffalo_l WEIGHTS (SCRFD-10G, ArcFace R50 / glint360k) are released for ACADEMIC / NON-COMMERCIAL research only. The compiled .hbm is a derivative of those weights and inherits that restriction.",
+    "recipe_only": true,
+    "commercial_alternative": "For a commercial build, swap detection to YuNet (OpenCV Zoo, Apache-2.0) and recognition to a permissively-licensed backbone. Those are different graphs and are not covered by this recipe."
+  },
+  "march": "nash-m",
+  "toolchain": {
+    "openexplorer": "3.7.0",
+    "hbdk": "4.7.5",
+    "board_system": "4.0.5",
+    "note": "SCRFD input.1 pinned to 640x640 via onnxslim; ArcFace input.1 pinned to 112x112 by direct onnx edit. IR capped to 9 (HBDK 4.x rejects IR>9)."
+  },
+  "shapes": {
+    "det": {
+      "input": "1x3x640x640",
+      "input_type_rt": "nv12",
+      "output": "nine raw per-stride heads: score/bbox/kps x strides 8/16/32 (decoded by BCDL)"
+    },
+    "rec": {
+      "input": "1x3x112x112",
+      "input_type_rt": "featuremap",
+      "output": "1x512 face embedding (L2-normalised downstream)"
+    }
+  },
+  "cosine": {
+    "A": 0.99,
+    "B": 1.0,
+    "C": 0.99,
+    "note": "For ArcFace, cosine is a localisation aid, not the acceptance gate. A degraded recognition tower still emits a well-formed 512-d embedding whose cosine-vs-float can look acceptable while verification accuracy drops -- the same failure osnet documents for ReID. The honest gate is the task_metric below. This is why an int16 rec build exists."
+  },
+  "task_metric": {
+    "name": "face verification ROC on a labelled pair set (e.g. LFW / IJB-style): TAR @ fixed FAR, embeddings compared by cosine",
+    "protocol": "Run the same aligned-pair set through the float ONNX and the board .hbm; compare TAR@FAR (and the score distribution), not just per-embedding cosine. int8 vs int16 must be judged here.",
+    "threshold": null,
+    "measured": null,
+    "note": "NOT MEASURED in this reconstruction -- no labelled verification numbers survived. Left null rather than guessed."
+  },
+  "measured": {
+    "note": "No measured on-board numbers survived for this model. All fields null; do not infer latency/accuracy from sibling models. Recipe reconstructed from salvaged hb_compile configs; export/calib reconstructed to match.",
+    "det": {
+      "hbm_mb": null,
+      "output_quantised_cosine": null,
+      "quantisation": "int8 (default; no optimization directive)",
+      "latency_ms": null,
+      "fps": null
+    },
+    "rec_int8": {
+      "hbm_mb": null,
+      "output_quantised_cosine": null,
+      "quantisation": "int8 (default mix)",
+      "latency_ms": null,
+      "fps": null
+    },
+    "rec_int16": {
+      "hbm_mb": null,
+      "output_quantised_cosine": null,
+      "quantisation": "all int16 (set_all_nodes_int16)",
+      "latency_ms": null,
+      "fps": null
+    }
+  },
+  "builds": [
+    {
+      "name": "scrfd_10g_nashm_640x640_nv12",
+      "config": "config_det.yaml",
+      "role": "shipped detector",
+      "quantisation": "int8"
+    },
+    {
+      "name": "arcface_r50_aligned_nashm_112x112",
+      "config": "config_rec.yaml",
+      "role": "shipped recogniser (int8)",
+      "quantisation": "int8",
+      "calibration": "ALIGNED 112x112 chips (insightface norm_crop)"
+    },
+    {
+      "name": "arcface_r50_aligned_int16_nashm_112x112",
+      "config": "config_rec_int16.yaml",
+      "role": "recogniser, int16 (recommended when the embedding must survive quantisation)",
+      "quantisation": "all int16",
+      "calibration": "same aligned chips"
+    }
+  ],
+  "rejected_builds": [
+    {
+      "name": "arcface_r50_nashm_112x112 (centre-crop calibration)",
+      "why": "ArcFace calibrated on centre-crops of detector boxes instead of aligned chips. Compiles and runs identically, but the calibration distribution does not match the aligned chips the runtime feeds, so the embedding quietly degrades. The shipped build is the `_aligned` one. A salvaged config for this centre-crop variant exists and is deliberately not carried forward."
+    }
+  ],
+  "board_verification": {
+    "note": "Not run in this repo. No three-layer close-out survived; export.py and calib.py reproduce the METHOD (locate + static-shape edit; aligned-chip calibration), not a verified binary."
+  }
+}
