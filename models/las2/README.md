@@ -8,7 +8,8 @@ Upstream: [LiteAnyStereo](https://github.com/TomTomTommi/LiteAnyStereo).
 | `las2_m_crop_nashm.hbm` | stereo disparity (centre-crop letterboxing) | ~14 ms / 71 FPS |
 | `las2_m_int16_nashm.hbm` | stereo disparity (resize letterboxing) | ~14 ms / 71 FPS |
 
-Licence tier **D** — recipe only, upstream terms not yet reviewed.
+Upstream licence: not yet reviewed — check LiteAnyStereo's terms before
+redistribution.
 
 ## Which build is wrong for you
 

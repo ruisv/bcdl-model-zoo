@@ -1,7 +1,7 @@
 # PP-OCRv6 — text detection + recognition
 
 Upstream: [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) v3.7.0.
-Licence tier **A** (Apache-2.0).
+Upstream licence: **Apache-2.0**.
 
 | build | shape | output |
 |---|---|---|

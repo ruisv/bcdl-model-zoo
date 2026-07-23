@@ -8,29 +8,25 @@ pre/post-processing, codecs and pipelines. **It does not convert models.** This
 repo is the other half — it runs on an x86 host with a GPU and the D-Robotics
 OpenExplorer toolchain, and produces the `.hbm` files BCDL consumes.
 
-## What this repo does and does not ship
+## What this repo ships
 
-It ships **recipes**: the ONNX export (including graph surgery), the calibration
-data generator, the `hb_compile` config, and the acceptance thresholds — enough
-to reproduce a model from its upstream checkpoint.
+**Recipes**: the ONNX export (including graph surgery), the calibration data
+generator, the `hb_compile` config, and the acceptance thresholds — enough to
+reproduce any model from its upstream checkpoint. The compiled `.hbm` files
+themselves are large and not committed (`.gitignore` excludes `*.hbm`); the
+recipe rebuilds them.
 
-It ships **almost no binaries**. A compiled `.hbm` is a derivative of upstream
-weights, and those weights carry their own licences — several of them copyleft
-or non-commercial. Only models whose upstream licence clearly permits it are
-distributed as compiled binaries; for everything else you run the recipe.
+**The model weights and the `.hbm` compiled from them follow their own upstream
+licences.** A compiled `.hbm` is a derivative of upstream weights, so check the
+model's licence before redistributing or shipping commercially — some are
+copyleft (AGPL) and some are non-commercial.
 
-> **Read this before assuming you can reproduce the BCDL benchmark table.**
-> The models BCDL's detection / classification / pose / segmentation / OBB
-> benchmarks run on are the YOLO family, which is **AGPL-3.0**. We do not host
-> binaries for those. You can rebuild them from the recipes here, but you cannot
-> download them from us.
-
-| tier | licence | models | what you get |
-|---|---|---|---|
-| **A** | Apache-2.0 / MIT / BSD | PP-OCRv5 det·cls·rec, ViTPose-S, XFeat, SPAN, Real-ESRGAN Compact, YOLOP, PIDNet-S, Depth-Anything-V2 **Small** | recipe **+ compiled `.hbm`**, with upstream LICENCE and provenance |
-| **B** | AGPL-3.0 | YOLO26 / YOLOv8 / YOLOE (Ultralytics) | **recipe only** — hosting AGPL derivative binaries pulls AGPL obligations onto the distributor |
-| **C** | non-commercial weights | SCRFD / ArcFace (insightface), Depth-Anything-V2 Base+ | **recipe only**; for a commercial build see the alternatives noted per model |
-| **D** | upstream unverified | LAS2, EdgeSAM, OSNet | **recipe only**, pending a per-model licence review |
+| model | upstream licence |
+|---|---|
+| PP-OCRv6/v5 det·cls·rec, ViTPose-S, XFeat, SPAN, Real-ESRGAN Compact, YOLOP, PIDNet-S, Depth-Anything-V2 **Small** | Apache-2.0 / MIT / BSD |
+| YOLO26 / YOLOv8 / YOLOE (Ultralytics) | **AGPL-3.0** — copyleft; commercial use needs Ultralytics' Enterprise licence |
+| SCRFD / ArcFace (insightface), Depth-Anything-V2 **Base and up** | non-commercial weights; for a commercial build see the alternatives noted per model |
+| LAS2, EdgeSAM, OSNet | upstream terms not yet reviewed — check before redistribution |
 
 ## Layout
 
