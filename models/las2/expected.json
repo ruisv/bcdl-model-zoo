@@ -55,5 +55,23 @@
     "compile_minutes": 39,
     "hbrt": "4.7.5",
     "layer_A_output_cosine": 0.999954
+  },
+  "board_verification": {
+    "date": "2026-07-23",
+    "board": "S100P",
+    "hbrt": "4.7.5",
+    "layer_B_hbm_vs_bc": {
+      "cosine": 1.0,
+      "max_abs_err": 0.0,
+      "bit_identical": true,
+      "verdict": "PASS"
+    },
+    "layer_C_hbm_vs_onnx": {
+      "cosine": 0.999814,
+      "max_abs_err": 7.97,
+      "verdict": "PASS",
+      "note": "max error is in occlusion/border pixels; the disparity field is otherwise sub-pixel"
+    },
+    "note": "First full three-layer close-out in this repo. Uses the rebuild (5-pair calibration), not the shipped binary."
   }
 }

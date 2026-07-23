@@ -178,11 +178,22 @@ different failure.
 | B execution consistency | board `.hbm` vs host `.bc` | **bit-identical** |
 | C end-to-end | board `.hbm` vs ONNX, real images | cosine > 0.99 |
 
-B is exact by construction — it is the same compiled graph run twice. Drift
-there is a plumbing fault, never a quantisation one, and the first thing to
-check is **input stride**: a row-padded buffer fed as if packed produces
-plausible output and once drove a face-recognition cosine to 0.015 while every
-compile-time check stayed green.
+B compares the same compiled graph run in two places, so a *gross* drift there
+is a plumbing fault, never a quantisation one — and the first thing to check is
+**input stride**: a row-padded buffer fed as if packed produces plausible output
+and once drove a face-recognition cosine to 0.015 while every compile-time check
+stayed green.
+
+**But "bit-identical" is the right bar only for pure fixed-point graphs.**
+Measured on the board: LAS2 (all-int16) and the PP-OCRv6 detector (all-int8)
+are bit-identical between `.hbm` and `.bc`, max abs error exactly 0. The
+PP-OCRv6 recogniser is not — it is mixed int8/int16/int32 with float CPU
+operators, and the board and host float implementations differ in the last
+places: cosine 1.0, max abs error 2e-4, and an **identical CTC decode**. So when
+the graph has float CPU ops, read layer B as *task equivalence* (same decode,
+same boxes) rather than bitwise equality. A 2e-4 logit drift that leaves the
+argmax unchanged is a pass; a stride bug is not, and the two are not hard to
+tell apart — the stride bug collapses the cosine, this does not.
 
 hb_compile prints a per-output cosine at the end of calibration, which is
 layer A for free.

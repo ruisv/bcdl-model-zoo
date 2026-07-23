@@ -86,8 +86,8 @@ has been re-run** — each model's README states exactly how far it got, and
 
 | model | recipe | verified to |
 |---|---|---|
-| [`las2`](models/las2/) — stereo disparity | complete | export reproduces the original graph; **layer A cosine 0.999954**; compiled on OE 3.7.0 (38.8 MB hbm). Rebuild is not the shipped binary — calibration set differs; board layers B/C not measured here |
-| [`ppocr_v6`](models/ppocr_v6/) — OCR det + rec | complete | decode verified character-exact against PaddleOCR in ONNX Runtime; **both compiled to `.hbm`** on OE 3.7.0 (det 0.98 / rec 0.97 int8 output cosine). Not board-run |
+| [`las2`](models/las2/) — stereo disparity | complete | **full three-layer close-out on the board**: A 0.999954, B bit-identical, C 0.9998. Rebuild differs from the shipped binary (calibration set) |
+| [`ppocr_v6`](models/ppocr_v6/) — OCR det + rec | complete | both compiled and **board-verified**: det layer B bit-identical, rec layer B task-equivalent; layer C shows real int8 character loss on a hard crop (documented, an int16 build is the next experiment) |
 
 Recipes still to reconstruct, roughly in cost order: `superres`, `xfeat`,
 `yoloe` (scripts survive intact); `span`, `vitpose` (one piece missing each);

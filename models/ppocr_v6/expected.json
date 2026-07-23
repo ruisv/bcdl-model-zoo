@@ -50,11 +50,48 @@
       "node_info_median_cosine": 0.9814,
       "gelu_placement": "all 25 GELU nodes ON=BPU"
     },
-    "assessment": "Both output cosines (0.98 det, 0.97 rec) sit below the 0.99 layer-A gate. This is int8 on transformer-ish OCR heads and is expected; DB detection thresholds its probability map and CTC recognition is argmax-per-step, so both tolerate some fidelity loss. Whether that costs real recall / character accuracy is a BOARD question -- compare against an int16 build only if it does. Do not fail these on cosine alone (see CONVERSION.md)."
+    "assessment": "Both output cosines (0.98 det, 0.97 rec) sit below the 0.99 layer-A gate. This is int8 on transformer-ish OCR heads and is expected; DB detection thresholds its probability map and CTC recognition is argmax-per-step, so both tolerate some fidelity loss. Whether that costs real recall / character accuracy is a BOARD question -- compare against an int16 build only if it does. Do not fail these on cosine alone (see CONVERSION.md). BOARD RESULT: det layer B bit-identical; rec layer B task-equivalent (2e-4 logit drift, identical decode). Layer C confirms real int8 character loss on a hard crop -- an int16 rec build is the next experiment if accuracy matters."
   },
   "open_questions": [
     "RESOLVED for detection: all 28 GELU (Erf/HzGelu) nodes show ON=BPU in node_info, i.e. no CPU fallback. ON=BPU is trustworthy (unlike ON=--). Latency still unmeasured until board.",
     "Recognition (SVTR stack) not yet compiled. If int8 output cosine is poor, read per-layer cosine only to localise, then consider int16 -- see CONVERSION.md.",
     "Detection output cosine 0.98 (int8): compare against an int16 det build if box recall degrades on the board."
-  ]
+  ],
+  "board_verification": {
+    "date": "2026-07-23",
+    "board": "S100P",
+    "hbrt": "4.7.5",
+    "det": {
+      "layer_B_hbm_vs_bc": {
+        "cosine": 1.0,
+        "max_abs_err": 0.0,
+        "bit_identical": true,
+        "verdict": "PASS"
+      },
+      "layer_C_hbm_vs_onnx": {
+        "cosine": 0.981733,
+        "verdict": "below 0.99 gate",
+        "interpretation": "Layer B is bit-identical, so this is pure int8 quantisation loss, not a port defect. DB detection thresholds its probability map; whether 0.98 costs box recall needs a boxed comparison, not a cosine."
+      }
+    },
+    "rec": {
+      "layer_B_hbm_vs_bc": {
+        "cosine": 1.0,
+        "max_abs_err": 0.00021,
+        "bit_identical": false,
+        "decoded_board": "120250215/020427A026",
+        "decoded_bc": "120250215/020427A026",
+        "verdict": "TASK-EQUIVALENT (not bit-identical)",
+        "interpretation": "board and host decode to identical text, but the logits differ by 2e-4. This model is mixed int8/int16/int32 with float CPU ops; board and host float implementations differ in the last places. Bit-identity holds for pure fixed-point graphs (las2, det), not necessarily for mixed ones. The right layer-B check here is task equivalence."
+      },
+      "layer_C_hbm_vs_onnx": {
+        "cosine": 0.949296,
+        "per_step_top1_agreement": "33/40",
+        "decoded_onnx": "1030520250215/20240427A026",
+        "decoded_board": "120250215/020427A026",
+        "verdict": "int8 drops characters vs float",
+        "interpretation": "Real int8 loss: board int8 decode drops several characters the float ONNX keeps. On this deliberately hard 48x320 crop (a 19.8:1 line squeezed to 6.7:1) int8 is visibly worse. This is the concrete answer to whether int8 rec is good enough: on hard inputs, not without an int16 comparison."
+      }
+    }
+  }
 }

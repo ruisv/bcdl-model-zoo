@@ -128,6 +128,28 @@ The `Erf` (GELU) question **is settled for detection**: all 28 GELU nodes show
 `ON=BPU` in `node_info.csv`, and `ON=BPU` is trustworthy (unlike `--`). No CPU
 fallback. Latency itself is still unmeasured until the board.
 
-**Not yet done:** neither model has run on the board, so there are no latency
-figures and no end-to-end accuracy against ground truth. `expected.json`
-separates these compiled numbers from the empty board section.
+### Board close-out
+
+Both models were run on an S100P (HBRT 4.7.5):
+
+- **det, layer B**: **bit-identical** to the host `.bc` (cosine 1.0, error 0).
+- **det, layer C**: cosine **0.9817** vs float ONNX. Since layer B is exact,
+  this is pure int8 quantisation loss, not a port defect. Whether 0.98 costs box
+  recall needs a boxed comparison on real pages, not a cosine.
+- **rec, layer B**: cosine 1.0 but **not** bit-identical (max abs error 2e-4).
+  The board and host nonetheless decode to **identical text**
+  (`120250215/020427A026`). This model is mixed int8/int16/int32 with float CPU
+  ops, so the last-place float difference is expected; the right layer-B check
+  here is that the decode matches, and it does.
+- **rec, layer C**: cosine **0.9493**, per-step top-1 agreement 33/40, and the
+  int8 decode **drops characters** the float ONNX keeps
+  (`1030520250215/…` → `120250215/…`). This is the concrete answer to "is int8
+  recognition good enough": on a hard crop, visibly not. An int16 recogniser is
+  the next experiment if accuracy matters.
+
+The two int8 output cosines being below 0.99 is therefore **not** a port
+problem — layer B proves the board matches the host. It is the quantisation
+itself, and it is a real cost for recognition on hard inputs.
+
+**Still not done:** no latency measurement (needs `hrt_model_exec perf` on a
+quiet board), and no end-to-end accuracy against a labelled page set.

@@ -122,6 +122,17 @@ Practically: this recipe produces a **working, verified** LAS2 model, not a
 reproduction of the exact binary in BCDL's `models/`. If you need the shipped
 model's numbers specifically, use the shipped model.
 
-Layers B and C need the board and have not been measured in this repo. The EPE,
-latency and FPS figures in `expected.json` come from the original adaptation
-work on the shipped build — **not** from this rebuild.
+### Board close-out
+
+Both board layers were measured on an S100P (HBRT 4.7.5), on this rebuild:
+
+- **layer B** (`.hbm` vs host `.bc`): **bit-identical** — cosine 1.0, max abs
+  error 0. The board runtime and the host simulation agree exactly, so the
+  plumbing (input stride, layout) is correct.
+- **layer C** (`.hbm` vs ONNX, real stereo pair): **cosine 0.999814**. The
+  largest errors are in occlusion and border pixels; the disparity field is
+  otherwise sub-pixel.
+
+This is the repo's first full three-layer close-out. The EPE, latency and FPS
+figures elsewhere in `expected.json` are from the original adaptation work on
+the **shipped** build, not this rebuild.
