@@ -1,0 +1,55 @@
+{
+  "model": "vitpose_s_wholebody_nashm_256x192",
+  "upstream": "ViTPose-S whole-body (COCO-WholeBody, 133 keypoints), easy_ViTPose export path",
+  "input_shape": "1x3x256x192",
+  "output_shape": "1x133x64x48",
+  "output_shape_note": "133 = 17 body + 6 foot + 68 face + 42 hand. The 64x48 spatial size (input/4) is RECONSTRUCTED, not confirmed from salvage; verify against the exported graph and correct if it differs.",
+  "quantisation": "compiler-default mixed (no forced bit width); LayerNorm-adjacent layers expected int16, rest int8. Not measured.",
+  "march": "nash-m",
+  "licence": "Apache-2.0 (easy_ViTPose / ViTPose). The pretrained wholebody weights follow their own terms — check before redistribution.",
+  "toolchain": {
+    "openexplorer": "3.7.0",
+    "hbdk": "4.7.5",
+    "board_system": "4.0.5",
+    "note": "Convention for this repo; the shipped .hbm was produced with this line. The host HBDK and board HBRT must match. NOT independently re-confirmed for this recipe."
+  },
+  "cosine": {
+    "A": 0.99,
+    "B": 1.0,
+    "C": 0.99,
+    "note": "Standard gates (host .bc vs ONNX; board .hbm vs host .bc bit-identical; board .hbm vs ONNX end-to-end). These are the GATES to run, not measured results — no verification numbers survived in salvage. Compare heatmaps, not decoded keypoints."
+  },
+  "task_metric": {
+    "name": "COCO-WholeBody keypoint AP (whole-body), top-down over ground-truth person boxes",
+    "protocol": "not defined in salvage; the natural check is AP on a WholeBody val subset with the same crop preprocessing as calib.py, plus per-keypoint heatmap-peak agreement vs the float ONNX.",
+    "threshold": null,
+    "measured": null,
+    "note": "No task-metric numbers survived. Heatmap cosine is a useful fidelity signal but keypoint AP is the real acceptance for a pose model; declare and measure it on a rebuild."
+  },
+  "measured": {
+    "note": "NONE of the on-board figures (latency, FPS, cosine-vs-fp32, hbm size) survived in salvage. The shipped file vitpose_s_wholebody_nashm_256x192.hbm exists on the board, but its measured numbers were not recorded here. Do not fabricate — measure on a rebuild.",
+    "hbm_mb": null,
+    "latency_ms": null,
+    "fps": null,
+    "cosine_vs_fp32": null,
+    "node_info": null
+  },
+  "rejected_builds": [],
+  "reconstruction": {
+    "export_py": "RECONSTRUCTED. The original export from checkpoint to ONNX did not survive; only a downstream static-shape prep (vitpose_prep.py) and a float reference runner (vitpose_ref.py) did. export.py here rebuilds the missing step from the salvaged I/O contract plus the standard easy_ViTPose export path.",
+    "confirmed_from_salvage": [
+      "input 1x3x256x192 NCHW, name input_0",
+      "preprocessing: pad box to 3:4, resize 192x256, /255, ImageNet z-score (mean 0.485/0.456/0.406, std 0.229/0.224/0.225), PAD_BBOX=10",
+      "featuremap + no_preprocess (normalisation outside the graph)",
+      "133-keypoint whole-body task",
+      "config.yaml compiler settings (march nash-m, O2, latency, jobs 32)"
+    ],
+    "reconstructed_or_uncertain": [
+      "export from checkpoint (whole export.py)",
+      "output tensor name (\"heatmaps\")",
+      "heatmap spatial size 64x48",
+      "exact head variant (classic vs simple decoder)"
+    ]
+  },
+  "board_verification": null
+}

@@ -1,0 +1,96 @@
+{
+  "model": "yoloe_11s_coco80_det_bpu_nashm_640x640_nv12 + yoloe_11s_coco80_seg_bpu_nashm_640x640_nv12",
+  "upstream": "Ultralytics YOLOE (YOLOE-11s-seg), open-vocabulary; frozen to a fixed COCO-80 vocabulary at export",
+  "licence": "AGPL-3.0 (Ultralytics)",
+  "licence_note": "TIER B, RECIPE-ONLY. AGPL-3.0 is copyleft: a compiled .hbm is a derivative of the Ultralytics weights. This repo ships the RECIPE, NOT any .hbm binary. Redistributing the .hbm carries AGPL obligations; commercial use requires an Ultralytics Enterprise licence. Do not commit or publish the compiled models.",
+  "input_shape": "1x3x640x640",
+  "input_type_rt": "nv12",
+  "input_type_train": "rgb",
+  "normalisation": "data_scale, scale 1/255 (0.003921568627451), mean 0. Baked by the compiler, not by the ONNX graph.",
+  "march": "nash-m",
+  "vocabulary": {
+    "classes": 80,
+    "order": "COCO-80, upstream order (see COCO80 in export_det.py / export_seg.py)",
+    "note": "The vocabulary is FROZEN at export: get_text_pe(COCO80) + set_classes + head.fuse() fold the CLIP text embeddings into cv3, so the static .hbm is a fixed-80-class detector. Runtime open-vocab prompting is gone by construction; to change classes, re-run export with a new list."
+  },
+  "toolchain": {
+    "openexplorer": "3.7.0",
+    "hbdk": "4.7.5",
+    "board_system": "4.0.5",
+    "note": "opset 19 exports at ONNX IR10; export_*.py caps ir_version to 9 (HBDK 4.x rejects IR > 9). IR9 covers up to opset 20, so this is a header change only."
+  },
+  "sub_models": {
+    "det": {
+      "onnx": "yoloe_11s_coco80_det_bpu.onnx",
+      "hbm_prefix": "yoloe_11s_coco80_det_bpu_nashm_640x640_nv12",
+      "outputs": "6 = 3 scales x [cls, box], NHWC, raw (no DFL/anchors/NMS on the BPU)",
+      "output_layout": {
+        "stride8":  {"cls": "1x80x80x80", "box": "1x80x80x64"},
+        "stride16": {"cls": "1x40x40x80", "box": "1x40x40x64"},
+        "stride32": {"cls": "1x20x20x80", "box": "1x20x20x64"}
+      },
+      "reg_max": 16,
+      "decode": "bcdl YoloLtrbDetector: DFL integral, anchor grid + stride, dist2bbox, class sigmoid, NMS -- all on the CPU. box channels 64 = 4 * reg_max, auto-detected."
+    },
+    "seg": {
+      "onnx": "yoloe_11s_coco80_seg_bpu.onnx",
+      "hbm_prefix": "yoloe_11s_coco80_seg_bpu_nashm_640x640_nv12",
+      "outputs": "10 = 3 scales x [cls, box, mask_coef] + proto, NHWC, raw",
+      "output_layout": {
+        "stride8":  {"cls": "1x80x80x80", "box": "1x80x80x64", "coef": "1x80x80x32"},
+        "stride16": {"cls": "1x40x40x80", "box": "1x40x40x64", "coef": "1x40x40x32"},
+        "stride32": {"cls": "1x20x20x80", "box": "1x20x20x64", "coef": "1x20x20x32"},
+        "proto":    "1x160x160x32"
+      },
+      "reg_max": 16,
+      "nm": 32,
+      "decode": "bcdl: detection decode as above, then per-detection mask = sigmoid(coef @ proto) cropped to the box -- on the CPU after NMS, so the full 32x160x160 stack is never materialised on the BPU."
+    }
+  },
+  "cosine": {
+    "A": 0.99,
+    "B": 1.0,
+    "C": 0.99,
+    "note": "Standard gates. Not yet measured for this model -- see measured.note. For a split detection head, per-output cosine on the raw cls/box tensors is the layer-A signal; whether it costs box recall / mask IoU is a board question, not a cosine one."
+  },
+  "task_metric": {
+    "name": "COCO-80 mAP (det: box mAP; seg: mask mAP), fixed-vocabulary",
+    "threshold": null,
+    "measured": null,
+    "note": "No task-metric measurement was salvaged. Declared here as the correct acceptance for a detector/segmenter; measure box mAP and mask mAP on a COCO val subset against the float ONNX (and, ideally, against ground truth) before accepting a quantised build."
+  },
+  "measured": {
+    "note": "NOT YET MEASURED IN THIS REPO. Only the two ONNX export scripts survived salvage -- there was no config.yaml, no calibration set, no compile log, and no board numbers. Everything below is null pending a re-run. Do not fabricate: the .hbm size, quantisation split, cosine, latency and mAP are all unknown until the recipe is re-run.",
+    "det": {
+      "hbm_mb": null,
+      "output_quantised_cosine": null,
+      "quantisation": null,
+      "latency_ms": null,
+      "fps": null,
+      "map": null
+    },
+    "seg": {
+      "hbm_mb": null,
+      "output_quantised_cosine": null,
+      "quantisation": null,
+      "latency_ms": null,
+      "fps": null,
+      "box_map": null,
+      "mask_map": null
+    }
+  },
+  "board_verification": {
+    "status": "not run",
+    "note": "No board close-out. Recipe reconstructed from the salvaged export scripts; calibration, config and compile were rebuilt to be consistent with the nv12/640 input and the split-head outputs, not verified end to end."
+  },
+  "provenance": {
+    "from_salvage": "export_det.py and export_seg.py (the head-surgery logic: freeze vocab via fuse(), split head keeping raw cls/box[/coef/proto] convs, NHWC).",
+    "reconstructed": "calib.py (letterbox 640 + pad 114, RGB, route through calib_pack.pack), config_det.yaml / config_seg.yaml (nv12 rt, rgb train, data_scale 1/255, nash-m), compile.sh (las2 pattern with --config), this expected.json.",
+    "assumptions": [
+      "Normalisation is scale-only (1/255, mean 0): the Ultralytics export does not bake /255, so the graph expects RGB in [0,1]. Verify against node_info if a build looks wrong.",
+      "Letterbox with pad 114 matches bcdl's YOLO preprocessing; confirm against the deployment code before trusting calibration.",
+      "input_name 'images' is the Ultralytics default export input name; confirm from the exported ONNX and adjust config if it differs.",
+      "jobs=32 and O2/latency copied from the repo default; not tuned for this model."
+    ]
+  }
+}

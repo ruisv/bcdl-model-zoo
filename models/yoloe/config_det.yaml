@@ -1,0 +1,32 @@
+# YOLOE-11s, fixed COCO-80, DETECTION split head. 640x640, nv12 input.
+#
+# The graph is raw convolution only (DFL/anchors/NMS are done on the CPU by
+# bcdl's YoloLtrbDetector -- see export_det.py). A plain CNN quantises cleanly,
+# so start at the compiler default (int8) and only move up if a board box-recall
+# comparison says so.
+#
+# Normalisation is NOT baked into the ONNX: it expects RGB in [0,1]. The board
+# feeds nv12, so the compiler converts nv12 -> rgb and applies scale 1/255.
+# mean is zero, so data_scale (scale only) is the whole normalisation. calib.py
+# hands pack() 0..255 pixels and pack() applies this same scale, so calibration
+# matches deployment exactly.
+model_parameters:
+  onnx_model: "yoloe_11s_coco80_det_bpu.onnx"
+  march: "nash-m"
+  working_dir: "./out_det"
+  output_model_file_prefix: "yoloe_11s_coco80_det_bpu_nashm_640x640_nv12"
+input_parameters:
+  input_name: "images"
+  input_shape: "1x3x640x640"
+  input_type_rt: "nv12"
+  input_type_train: "rgb"
+  input_layout_train: "NCHW"
+  norm_type: "data_scale"
+  scale_value: "0.003921568627451"          # 1/255
+calibration_parameters:
+  cal_data_dir: "/ws/cal_det"
+  calibration_type: "default"
+compiler_parameters:
+  optimize_level: "O2"
+  compile_mode: "latency"
+  jobs: 32

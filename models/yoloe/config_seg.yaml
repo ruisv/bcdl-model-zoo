@@ -1,0 +1,29 @@
+# YOLOE-11s, fixed COCO-80, SEGMENTATION split head. 640x640, nv12 input.
+#
+# Same input contract as the det build. Ten outputs: 3 scales x [cls, box,
+# mask_coef] plus one proto -- all raw NHWC conv outputs. Mask assembly
+# (coef @ proto -> sigmoid -> crop) is done on the CPU by bcdl after NMS, so the
+# BPU graph stays pure convolution. See export_seg.py.
+#
+# Normalisation is NOT baked into the ONNX: RGB in [0,1]. nv12 runtime input, so
+# the compiler converts nv12 -> rgb and applies scale 1/255 (mean is zero).
+model_parameters:
+  onnx_model: "yoloe_11s_coco80_seg_bpu.onnx"
+  march: "nash-m"
+  working_dir: "./out_seg"
+  output_model_file_prefix: "yoloe_11s_coco80_seg_bpu_nashm_640x640_nv12"
+input_parameters:
+  input_name: "images"
+  input_shape: "1x3x640x640"
+  input_type_rt: "nv12"
+  input_type_train: "rgb"
+  input_layout_train: "NCHW"
+  norm_type: "data_scale"
+  scale_value: "0.003921568627451"          # 1/255
+calibration_parameters:
+  cal_data_dir: "/ws/cal_seg"
+  calibration_type: "default"
+compiler_parameters:
+  optimize_level: "O2"
+  compile_mode: "latency"
+  jobs: 32

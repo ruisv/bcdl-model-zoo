@@ -1,0 +1,62 @@
+{
+  "model": "xfeat_nashm_640x480",
+  "upstream": "XFeat (verlab/accelerated_features), xfeat.pt",
+  "input_shape": "1x1x480x640",
+  "input_note": "single-channel featuremap: grayscale (channel mean) + InstanceNorm done on CPU before the board, not pixels. See export.py / calib.py.",
+  "outputs": {
+    "feats": "1x64x60x80 dense descriptor map (L2-normalised downstream)",
+    "keypoints": "1x65x60x80 keypoint logits (64 = 8x8 SpaceToDepth cells + dustbin)",
+    "heatmap": "1x1x60x80 reliability heatmap",
+    "note": "Shapes derived from the 8x stride and heads in export.py; not independently re-measured from the shipped ONNX. Keypoint NMS, top-k selection and sparse descriptor sampling are CPU post-processing in BCDL, not in the graph."
+  },
+  "quantisation": "compiler default (no optimization directive) — predominantly int8. Not independently re-verified in this repo.",
+  "march": "nash-m",
+  "licence": "XFeat (accelerated_features) is Apache-2.0. The pretrained xfeat.pt follows the same repo's terms — check before redistribution.",
+  "toolchain": {
+    "openexplorer": "3.7.0",
+    "hbdk": "4.7.5",
+    "board_system": "4.0.5",
+    "note": "Recorded so a future failure can be attributed. The host HBDK and the board HBRT must match; 3.7.0 host pairs with 4.0.5 board. Not confirmed against a fresh rebuild here."
+  },
+  "cosine": {
+    "A": 0.99,
+    "B": 1.0,
+    "C": 0.99,
+    "note": "Three outputs; run the A/C gate per output (feats/keypoints/heatmap). For a feature extractor the honest end-to-end check is the task metric below (keypoint repeatability + descriptor match count), because a plausible-looking descriptor cosine does not prove the matches survive — the same failure mode as OSNet."
+  },
+  "task_metric": {
+    "name": "sparse feature match: mutual-nearest-neighbour matches (min cossim 0.82) between an image pair, and keypoint agreement vs the float decode",
+    "protocol": "Run the float ONNX decode (xfeat_ref.py: XFeat.get_kpts_heatmap -> NMS kernel 5 -> InterpolateSparse2d nearest*bilinear scoring -> top_k 4096, threshold 0.05, L2-normalised descriptors -> mutual-NN match) as the reference, then run the same CPU decode on the board .hbm outputs and compare kept keypoints and match count on the upstream assets/ref.png <-> assets/tgt.png pair.",
+    "threshold": null,
+    "measured": null,
+    "note": "No board-measured match/repeatability numbers survived in the salvage material. The reference decode exists (reconstruct from xfeat_ref.py); the acceptance numbers were never recorded here. Do NOT treat descriptor cosine alone as the gate."
+  },
+  "measured": {
+    "note": "No on-board latency / FPS / cosine figures survived in the salvage material for the shipped xfeat_nashm_640x480.hbm. Left null rather than invented; measure on an S100P with hrt_model_exec on a quiet board and fill in.",
+    "hbm_bytes": null,
+    "latency_ms": null,
+    "fps": null,
+    "cosine_vs_fp32": null
+  },
+  "rejected_builds": [
+    {
+      "name": "InstanceNorm left in the graph",
+      "why": "XFeat's InstanceNorm is a per-image, data-dependent statistic that quantises badly. The shipped recipe lifts it into CPU preprocessing so the graph sees a standardised, single-channel featuremap. Reconstruction of intent from export.py; no side-by-side accuracy number was recorded."
+    }
+  ],
+  "graph_rewrites": [
+    {
+      "op": "InstanceNorm2d -> CPU preprocessing",
+      "why": "data-dependent per-image stat, quantises badly; also standardises the input domain. Model input becomes an already grayscale + instance-normalised [1,1,480,640] featuremap.",
+      "verified": "export.py checks the rewritten module vs the original end-to-end (max|diff| < 1e-4 on feats/keypoints/heatmap)."
+    },
+    {
+      "op": "_unfold2d -> F.pixel_unshuffle (SpaceToDepth)",
+      "why": "torch.onnx has no clean lowering for the custom window gather; pixel_unshuffle exports to a single SpaceToDepth and is the same permutation for C=1 (offset (dy,dx) -> channel dy*8+dx).",
+      "verified": "export.py asserts torch.equal(_unfold2d(probe,8), pixel_unshuffle(probe,8)) before export."
+    }
+  ],
+  "board_verification": {
+    "note": "No three-layer close-out survived in the salvage material for this model. The recipe reproduces the export (with its two numerically-checked rewrites) and the calibration method; on-board A/B/C and the task metric still need to be run and recorded."
+  }
+}

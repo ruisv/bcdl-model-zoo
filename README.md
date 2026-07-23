@@ -85,13 +85,18 @@ has been re-run** — each model's README states exactly how far it got, and
 | [`las2`](models/las2/) — stereo disparity | complete | **full three-layer close-out on the board**: A 0.999954, B bit-identical, C 0.9998. Rebuild differs from the shipped binary (calibration set) |
 | [`ppocr_v6`](models/ppocr_v6/) — OCR det + rec | complete | compiled and **board-verified**; det layer B bit-identical. Recognition in **four builds** (320/960 × int8/int16); int16 halves the character error at both widths and 960 int16 decodes long lines near-perfectly (79-char sentence exact). Preprocessing corrected to aspect-preserving pad |
 | [`osnet`](models/osnet/) — person ReID | complete | **the first task-metric recipe**: int8 PTQ collapses (Rank-1 51% vs 85%) so the shipped build is **QAT self-distillation** — no labels, ~20 min, Rank-1 recovered to 84.6%. Board-validated in the original M10 work (cosine 0.9799, 0.82 ms/crop). Includes a reproducible int8-collapse path |
+| [`yolop`](models/yolop/) — panoptic driving | recipe | the `_cut` surgery: the uncut graph bakes the anchor decode via `ScatterND`, which compiles clean and **never writes the objectness/class columns** (silent, total detector failure). `export.py` cuts before the decode and emits the 3 raw heads; BCDL decodes. Not re-run through the toolchain here |
+| [`pidnet`](models/pidnet/) — real-time seg | recipe | the `_v3` pre-normalisation trap: un-normalised calibration data compiles clean and segments to noise. `calib.py` routes through `calib_pack` so calibration matches the runtime distribution. Export reconstructed (opset-19, no-norm); calibration is the faithful, load-bearing part |
+| [`superres`](models/superres/) — Real-ESRGAN ×4 | recipe | scripts intact. Documents the tile-**area** size trap (~37 MB @128 vs ~148 MB @256 for identical per-pixel quality). No board numbers survived — measured fields left null |
+| [`span`](models/span/) — SPAN ×4 | recipe | scripts intact except calibration (reconstructed by analogy). The fidelity half of the keep-both super-res pair (~1/6 of Compact's size). Measured fields null |
+| [`xfeat`](models/xfeat/) — sparse features | recipe | scripts intact, two numerically-checked graph rewrites (InstanceNorm → CPU preprocessing; `_unfold2d` → SpaceToDepth). Single-channel featuremap input. Measured fields null |
+| [`yoloe`](models/yoloe/) — open-vocab det + seg | recipe | scripts intact. Head surgery freezes the open vocabulary (CLIP text embeddings folded into `cv3`) and emits raw heads; DFL/anchor/mask decode on the CPU. **AGPL-3.0 — recipe only, no redistributable binary.** Config reconstructed |
+| [`vitpose`](models/vitpose/) — whole-body pose | recipe | 133-keypoint ViTPose-S. Export reconstructed (only prep + reference survived). Documents the ViT-on-BPU LayerNorm-precision concern (let the compiler auto-promote to int16). Measured fields null |
 
-Recipes still to reconstruct, roughly in cost order: `superres`, `xfeat`,
-`yoloe` (scripts survive intact); `span`, `vitpose` (one piece missing each);
-`face`, `edgesam` (recoverable by diffing the derived ONNX against its parent);
-`pidnet`, `yolop` (the two remaining high-value write-ups); `yolo26` (hardest —
-its compile config was never saved and must be reconstructed from the compile
-log).
+Recipes still to reconstruct: `face` (SCRFD + ArcFace — recoverable by diffing
+the derived ONNX against its insightface parent), `edgesam` (encoder + two
+decoders), and `yolo26` (hardest — its compile config was never saved and must
+be reconstructed from the compile log).
 
 ## Licence
 

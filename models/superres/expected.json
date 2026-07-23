@@ -1,0 +1,54 @@
+{
+  "model": "realesr_general_x4v3_nashm_128",
+  "upstream": "Real-ESRGAN Compact (SRVGGNetCompact, realesr-general-x4v3), x4",
+  "input_shape": "1x3x128x128",
+  "output_shape": "1x3x512x512",
+  "quantisation": "int8 PTQ (default calibration)",
+  "march": "nash-m",
+  "licence": "Real-ESRGAN (xinntao/Real-ESRGAN) is BSD-3-Clause. The realesr-general-x4v3 weights ship under the same repo; check the repo's terms before redistribution.",
+  "toolchain": {
+    "openexplorer": "3.7.0",
+    "hbdk": "4.7.5",
+    "board_system": "4.0.5",
+    "note": "Recorded so a future failure can be attributed. The host HBDK and the board HBRT must match; 3.7.0 host pairs with 4.0.5 board."
+  },
+  "cosine": {
+    "A": 0.99,
+    "B": 1.0,
+    "C": 0.99,
+    "note": "featuremap input with no_preprocess; the tile is fed as RGB CHW in [0,1]. Layer A is the per-output cosine hb_compile prints at the end of calibration."
+  },
+  "task_metric": {
+    "name": "PSNR of the reconstructed HR vs true HR, with bicubic as the floor",
+    "protocol": "Take a real image as ground-truth HR, 4x INTER_AREA downscale to make the LR input, upscale, compare. A useful upscaler must beat bicubic. calib.py --golden saves a single isolated tile (in/out) for a board-vs-float layer-C comparison with no tile blending involved.",
+    "measured": null,
+    "measured_note": "No PSNR/dB figure survives in the salvaged scripts. sr_ref.py implements the method (model vs bicubic vs ground-truth HR) but no recorded value was captured. Reconstruct with calib.py --golden + a board run; do not quote a number until measured."
+  },
+  "measured": {
+    "note": "No latency, PSNR or cosine measurement survives in the salvaged scripts/configs for this build. The values below are null on purpose. Do not invent them; measure on an S100P with hrt_model_exec on a quiet board.",
+    "hbm_mb": null,
+    "hbm_mb_note": "Not recorded precisely. The documented tile-AREA scaling puts the 128 tile at ~37 MB and the 256 tile at ~148 MB; treat those as the order-of-magnitude expectation, not a measured byte count for this rebuild.",
+    "latency_ms": null,
+    "fps": null,
+    "cosine_vs_fp32": null
+  },
+  "builds": [
+    {
+      "name": "128 tile (shipped, config.yaml)",
+      "tile": "128x128",
+      "hbm_mb_approx": 37,
+      "why": "The on-board runtime already tiles the frame, so the small tile is the right one. Same per-pixel throughput as the larger tiles, a quarter of the instruction stream."
+    },
+    {
+      "name": "256 tile (config_256.yaml, not shipped)",
+      "tile": "256x256",
+      "hbm_mb_approx": 148,
+      "why": "NOT more accurate. A compiled .hbm is mostly instruction stream and scales with input AREA: 256 is 4x the pixels, ~4x the size, for identical per-pixel quality. Only worth it if the runtime cannot tile."
+    }
+  ],
+  "board_verification": {
+    "date": null,
+    "board": "S100P",
+    "note": "Not re-verified in this repo. The recipe reconstructs the method (export -> [0,1] tile calibration with a native/downscaled domain mix -> int8 compile) faithfully from the salvaged scripts; the three-layer close-out (A/B/C) and the PSNR task metric have not been re-run here. Verify before quoting numbers."
+  }
+}

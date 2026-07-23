@@ -1,0 +1,48 @@
+{
+  "model": "spanx4_ch48_nashm_128",
+  "upstream": "SPAN (hongyuanyu/SPAN), spanx4_ch48, x4 super-resolution",
+  "input_shape": "1x3x128x128",
+  "output_shape": "1x3x512x512",
+  "quantisation": "int8 (default; no per-node override in config.yaml)",
+  "march": "nash-m",
+  "licence": "SPAN upstream is Apache-2.0. The .hbm is a derivative of the upstream weights; check their terms before commercial redistribution.",
+  "toolchain": {
+    "openexplorer": "3.7.0",
+    "hbdk": "4.7.5",
+    "board_system": "4.0.5",
+    "note": "Recorded so a future failure can be attributed. The host HBDK and the board HBRT must match; 3.7.0 host pairs with 4.0.5 board."
+  },
+  "cosine": {
+    "A": 0.99,
+    "B": 1.0,
+    "C": 0.99,
+    "note": "Standard three-layer gates. Not yet measured for this model in this repo -- see 'measured'."
+  },
+  "task_metric": {
+    "name": "PSNR vs ground-truth HR (and vs a bicubic baseline the upscaler must beat)",
+    "protocol": "Take a real HR image, 4x-downscale (INTER_AREA) to make the LR input, tile+blend through the model, score PSNR against the true HR. Bicubic resize of the same LR is the floor. span_ref logic in export.py / a board harness does this.",
+    "threshold": null,
+    "measured": {
+      "note": "No PSNR figure was recorded in the salvaged span material; left null rather than fabricated. The reference harness prints model-PSNR, bicubic-PSNR and their delta -- capture those on a rebuild."
+    }
+  },
+  "measured": {
+    "note": "The salvaged span conversion material carried NO board measurements (no latency, no FPS, no cosine, no PSNR). Every such field is null and must be filled from a rebuild + board run; none is fabricated here.",
+    "hbm_mb": 37,
+    "hbm_mb_note": "Approximate, from the repo-wide observation that a super-res .hbm is mostly instruction stream and scales with input AREA: this net is ~37 MB at a 128x128 tile and ~148 MB at 256x256, for identical per-pixel throughput. Not independently re-measured in this recipe.",
+    "cosine_vs_fp32": null,
+    "latency_ms": null,
+    "fps": null,
+    "psnr_db": null
+  },
+  "notes": {
+    "output_convention": "SPAN normalises its input by (x-mean)*img_range and never undoes it, and ships no inference script saying what the raw output means. export.py scores both candidate conventions ('raw already [0,1]' vs 'raw/255 + mean') against a real HR image and folds the winner into the graph so the model returns [0,1]. Guessing this wrong yields a plausible image with shifted colour/levels at full speed.",
+    "conv3xc": "Conv3XC reparameterises a 1x1->3x3->1x1 branch + 1x1 skip into a single 3x3, but recomputes that fusion inside forward(). export.py fuses once, swaps forward() for the plain eval conv, and asserts the swap is numerically identical (<1e-5) before exporting.",
+    "tile_area": "The .hbm scales with tile AREA, not weights. Compile the 128 tile if the runtime tiles the frame.",
+    "keep_both_pair": "SPAN is the FIDELITY choice: it wins on clean input and is ~1/6 the size of Real-ESRGAN Compact (the sibling superres build). Compact is the PERCEPTUAL choice for blurred/compressed input. They are a keep-both pair, not better/worse."
+  },
+  "status": {
+    "recipe": "export.py + config.yaml + compile.sh are reconstructed from the salvaged span convert scripts. calib.py is RECONSTRUCTED by analogy (no calibration script survived for span); it mirrors the sibling super-res calib and span_ref preprocessing.",
+    "verified": "Not re-run end to end in this repo. No board close-out; no A/B/C cosine, no PSNR, no latency recorded."
+  }
+}
