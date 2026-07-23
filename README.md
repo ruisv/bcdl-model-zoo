@@ -75,10 +75,12 @@ metric in `expected.json` too.
 
 ## Status
 
-Recipes are being reconstructed from the original conversion work; not every
-model in BCDL's catalogue is here yet. **A recipe being present does not mean it
-has been re-run** — each model's README states exactly how far it got, and
-`expected.json` distinguishes gates from measurements.
+Every converted model in BCDL's catalogue now has a recipe. **A recipe being
+present does not mean it has been re-run** — three are board-verified end to end
+(`complete`), the rest reconstruct the method faithfully from the original
+conversion work (`recipe`). Each model's README states exactly how far it got, and
+`expected.json` distinguishes gates from measurements — where no board numbers
+survived, the measured fields are `null` on purpose, never invented.
 
 | model | recipe | verified to |
 |---|---|---|
@@ -92,11 +94,25 @@ has been re-run** — each model's README states exactly how far it got, and
 | [`xfeat`](models/xfeat/) — sparse features | recipe | scripts intact, two numerically-checked graph rewrites (InstanceNorm → CPU preprocessing; `_unfold2d` → SpaceToDepth). Single-channel featuremap input. Measured fields null |
 | [`yoloe`](models/yoloe/) — open-vocab det + seg | recipe | scripts intact. Head surgery freezes the open vocabulary (CLIP text embeddings folded into `cv3`) and emits raw heads; DFL/anchor/mask decode on the CPU. **AGPL-3.0 — recipe only, no redistributable binary.** Config reconstructed |
 | [`vitpose`](models/vitpose/) — whole-body pose | recipe | 133-keypoint ViTPose-S. Export reconstructed (only prep + reference survived). Documents the ViT-on-BPU LayerNorm-precision concern (let the compiler auto-promote to int16). Measured fields null |
+| [`yolo26`](models/yolo26/) — detection (main) | recipe | BCDL's main detector. Same DFL split-head cut as YOLOE det, minus the open-vocab fuse. Highest-risk reconstruction: the compile config was never saved, so `config.yaml` is reconstructed and flagged to verify. **AGPL-3.0 — recipe only, no binary** |
+| [`ppocr_v5`](models/ppocr_v5/) — OCR det + rec + cls | recipe | kept for the **angle classifier v6 lacks** (v5 det/rec are a fallback). The export rot is the write-up: the surviving PaddleOCR script pointed at a `PP-OCRv4_server_seal_det` (wrong model *and* version) with the shape-fix commented out. Dictionary count asserted against the ONNX output width |
+| [`face`](models/face/) — SCRFD det + ArcFace rec | recipe | both ONNX come from the insightface `buffalo_l` pack (locate + tiny edit, not a torch export). The `_aligned` calibration is the shipped build; int8/int16 recognition builds. **insightface weights non-commercial — recipe only** |
+| [`edgesam`](models/edgesam/) — promptable seg | recipe | encoder + two fixed-prompt decoders (sp1 / bp2). The multi-input decoder calibration feeds real encoder embeddings + sampled prompts. Upstream terms unreviewed — recipe only |
 
-Recipes still to reconstruct: `face` (SCRFD + ArcFace — recoverable by diffing
-the derived ONNX against its insightface parent), `edgesam` (encoder + two
-decoders), and `yolo26` (hardest — its compile config was never saved and must
-be reconstructed from the compile log).
+Every model here is one BCDL has a decoder for and has run on the board. Not in
+this repo, by design: the **download-only** entries in BCDL's catalogue (Depth-
+Anything-V2, SigLIP, DeepLabV3+, YOLOv8, the YOLO26n zoo builds) — their "recipe"
+is a URL, so they live in BCDL's `fetch_models.sh`, not here — and the
+exploratory conversions with no BCDL decoder (dinov3, rf-detr, rt-detr, rtmpose,
+mono3d), which would ship a recipe with no end-to-end path to validate it.
+
+## Getting the compiled binaries
+
+Recipes rebuild any model from its upstream checkpoint. For the permissively
+licensed models (Apache-2.0 / MIT / BSD) the compiled `.hbm` may also be hosted
+directly; the copyleft (AGPL) and non-commercial ones are **recipe-only** and are
+never redistributed here — build them yourself from your own licensed weights.
+Each model's `expected.json` records the tier.
 
 ## Licence
 
