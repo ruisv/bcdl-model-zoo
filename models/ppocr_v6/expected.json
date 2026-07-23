@@ -95,24 +95,29 @@
     }
   },
   "int16_recognition": {
-    "why": "int8 recognition drops characters on hard inputs; this quantifies whether int16 is worth it.",
-    "method": "20 aspect-fitting real line crops (<=6.7:1, so float decodes cleanly and the aspect limit is out of the picture). Compare each build's board decode to the float ONNX decode.",
+    "why": "int8 recognition looked poor; separating the preprocessing error from the quantisation error was the key.",
+    "critical_finding": "The dominant error was preprocessing, not quantisation. A plain cv2.resize to (320,48) STRETCHES short lines; PaddleOCR/BCDL use aspect-preserving resize + right-pad. On float ONNX (no quantisation) the two preprocessings disagree on 16/20 short crops, pad being right. Both calib.py and evaluation now use pad.",
+    "method": "20 aspect-fitting real line crops (<=6.7:1), correct pad preprocessing on calibration AND evaluation, board decode vs float ONNX decode.",
     "results_vs_float_decode": {
-      "int8_exact_match": "8/20",
-      "int16_exact_match": "17/20"
+      "int8": {
+        "exact": "9/20",
+        "char_error_rate": "12.6%"
+      },
+      "int16": {
+        "exact": "16/20",
+        "char_error_rate": "4.9%"
+      }
     },
-    "layer_C_cosine_vs_onnx": {
-      "int8": 0.9493,
-      "int16": 0.9949
-    },
+    "calibration_cosine_improvement": "Fixing the calibration preprocessing raised the int8 rec output cosine from 0.9747 (stretch) to 0.9819 (pad) on its own, before any bit-width change.",
     "layer_B": {
-      "int8": "cosine 1.0 but 2e-4 drift (mixed precision has float CPU ops)",
-      "int16": "bit-identical (pure fixed-point path restored)"
+      "int8": "cosine 1.0, 2e-4 drift (mixed precision, float CPU ops)",
+      "int16": "bit-identical (pure fixed-point)"
     },
     "hbm_mb": {
-      "int8": 22.6,
-      "int16": 25.2
+      "int8": 22.7,
+      "int16": 24.0
     },
-    "recommendation": "Use the int16 build (config_rec_int16.yaml) when recognition accuracy matters. int8 is fine for easy, well-cropped text; on harder crops it visibly degrades. Latency cost of int16 is unmeasured on the board."
+    "recommendation": "Use int16 (config_rec_int16.yaml) when accuracy matters -- it more than halves CER. int8 is fine for easy well-cropped Latin text; most of its errors are single-glyph. Latency of int16 unmeasured on board.",
+    "note_on_earlier_numbers": "An earlier evaluation used stretch preprocessing and reported int8 8/20 vs int16 17/20, exaggerating both the absolute loss and the int16 advantage. Superseded by the pad numbers above."
   }
 }

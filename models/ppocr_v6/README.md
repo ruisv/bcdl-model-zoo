@@ -49,22 +49,55 @@ ONNX:
 | v6 float | 960 | 30 — exact |
 
 Both float models drop characters at 320; the fix is width, not precision. **This
-is not a v6 regression — v5 has the same limit, worse.** If your lines are long,
-either split them upstream of the recogniser or compile a wider one, but note the
-`.hbm` grows with input area: 48×960 is 3× the area of 48×320.
+is not a v6 regression — v5 has the same limit, worse.**
+
+**Should the rec ONNX just be exported wider?** It depends on your text. With the
+correct aspect-preserving preprocessing (trap #3), 320 already handles any line
+up to 6.7:1 without distortion — a short line is scaled to its natural width and
+right-padded, not stretched. Only genuinely long lines (a full sentence, a long
+digit string like the 19.8:1 sample above) overflow 320 and get truncated. For
+those, export wider — `export.py --task rec --hw 48 960` produces a valid
+`1×3×48×960 → 1×120×18710` graph — but the `.hbm` grows with input **area**
+(48×960 is 3× the instructions of 48×320) and every short line then wastes most
+of that width on padding. Usually the better answer is to **split long lines
+upstream** (the detector already yields per-line boxes) and keep the 320 model.
+Reserve a wide build for a workload that is genuinely long-line-dominated.
 
 The practical consequence for **evaluating quantisation**: never measure int8 vs
 int16 on a crop wider than 6.7:1, or the aspect loss swamps the quantisation
 signal. The board section below uses aspect-fitting crops for exactly this
 reason.
 
-**3. Normalisation is not in `config.yaml`.** Both models compile as
+**3. Recognition preprocessing is aspect-preserving + right-pad, NOT a stretch.**
+This is the one that bites hardest, and it is easy to get wrong. PaddleOCR's
+`resize_norm_img` (and BCDL's `packNchwPad`) scale the crop to height 48 keeping
+its aspect ratio, then **right-pad with zeros** to width 320. A naive
+`cv2.resize(img, (320, 48))` instead **stretches** a short line to fill the full
+width, which distorts every glyph. Measured impact, decoding the **float** ONNX
+(no quantisation at all) on 20 short crops: stretch vs pad changed the decode on
+**16 of 20**, and pad was almost always right —
+
+| stretch (wrong) | pad (correct) |
+|---|---|
+| `CT\|NHO` | `COUTINHO` |
+| `C` | `Englis` |
+| `''` | `P2` |
+| `0CHARD` | `RCHARD` |
+
+The distortion dwarfs the int8/int16 difference. `calib.py` does the correct
+pad, so the calibration distribution matches deployment; if you evaluate with a
+stretch you will blame the quantiser for what the preprocessing broke.
+
+Channel order is **RGB** (BGR read, R into channel 0) to match BCDL/ccdl.
+Upstream PaddleOCR's own inference happens to feed BGR to this same graph; the
+deployment target here is BCDL, and calibration follows the deployment.
+
+**4. Normalisation is not in `config.yaml`.** Both models compile as
 `featuremap` / `no_preprocess`, matching v5 so the runtime's OCR path needs no
-change. That means the compiler applies nothing, and the normalisation contract
-lives between `calib.py` and the runtime's CPU preprocessing rather than in the
-yaml. This is the one model here where `calib_pack.py` cannot enforce that
-invariant for you — if you change the runtime preprocessing, change `calib.py`
-to match, or the calibration distribution silently stops matching deployment.
+change. The compiler applies nothing, so the whole normalisation-and-resize
+contract lives between `calib.py` and the runtime's CPU preprocessing rather than
+in the yaml. This is the one model here where `calib_pack.py` cannot enforce that
+invariant for you — trap #3 is exactly what goes wrong when it drifts.
 
 ## Running it
 
@@ -111,13 +144,19 @@ Both models compiled to `.hbm` on OE 3.7.0 (HBRT 4.7.5), all int8 PTQ:
 | | hbm | output cosine (vs float) | quantisation | calibration |
 |---|---|---|---|---|
 | det | 22.4 MB | 0.9817 | all int8 | 24 dataset sample pages |
-| rec | 22.6 MB | 0.9747 | mixed (compiler-chosen: 162 int8 + 27 int16) | 64 line crops cut from those pages by the det ONNX |
+| rec (int8) | 22.7 MB | 0.9819 | mixed (compiler-chosen: 162 int8 + 27 int16) | 64 line crops cut from those pages by the det ONNX |
+| rec (int16) | 24.0 MB | 0.9974 | all int16 (`config_rec_int16.yaml`) | same 64 crops |
 
-The recogniser's mix was **chosen by the compiler**, not requested: with no
-`optimization` directive, hb_compile promoted 27 nodes to int16 on its own —
+The recogniser's default mix was **chosen by the compiler**, not requested: with
+no `optimization` directive, hb_compile promoted 27 nodes to int16 on its own —
 almost certainly the LayerNorm-adjacent layers a transformer stack is sensitive
 at. Worth knowing before reaching for a manual mixed-precision config: the
 default already does the obvious promotions.
+
+The rec cosine here is **0.9819, up from 0.9747** in an earlier build — the only
+thing that changed was fixing the calibration preprocessing (trap #3): the same
+stretch-vs-pad error that distorts inference also distorted the calibration set,
+so getting it right improved the quantisation itself, before any bit-width change.
 
 One fix the compile forced that reading could not: the **detector exports at
 ONNX IR10**, which HBDK rejects (max IR9). `export.py` now caps it; the
@@ -148,42 +187,39 @@ Both models were run on an S100P (HBRT 4.7.5):
   (`120250215/020427A026`). This model is mixed int8/int16/int32 with float CPU
   ops, so the last-place float difference is expected; the right layer-B check
   here is that the decode matches, and it does.
-- **rec, layer C**: cosine **0.9493**, per-step top-1 agreement 33/40, and the
-  int8 decode **drops characters** the float ONNX keeps
-  (`1030520250215/…` → `120250215/…`). This is the concrete answer to "is int8
-  recognition good enough": on a hard crop, visibly not. An int16 recogniser is
-  the next experiment if accuracy matters.
+- **rec, layer B**: cosine 1.0 but not bit-identical (2e-4). Same reason as
+  above; board and host decode identically.
 
-The two int8 output cosines being below 0.99 is therefore **not** a port
-problem — layer B proves the board matches the host. It is the quantisation
-itself, and it is a real cost for recognition.
+The int8 output cosine being below 0.99 is **not** a port problem — layer B
+proves the board matches the host. It is the quantisation itself.
 
-### int8 vs int16 recognition
+### int8 vs int16 recognition (corrected preprocessing)
 
-How real that cost is, measured properly — on 20 aspect-fitting crops (≤6.7:1,
-so the float decode is clean and the aspect limit is out of the picture), each
-build's board decode compared to the float ONNX decode:
+Measured on 20 aspect-fitting crops (≤6.7:1, so the aspect limit is out of the
+picture), with the **correct pad preprocessing** on both calibration and
+evaluation, each board build compared to the float ONNX decode:
 
-| rec build | matches float | layer C vs ONNX | layer B | hbm |
+| rec build | exact match | char error rate | layer B | hbm |
 |---|---|---|---|---|
-| int8 (default) | **8 / 20** | 0.9493 | cosine 1.0, 2e-4 drift | 22.6 MB |
-| int16 (`config_rec_int16.yaml`) | **17 / 20** | 0.9949 | bit-identical | 25.2 MB |
+| int8 (default) | 9 / 20 | **12.6 %** | cosine 1.0, 2e-4 drift | 22.7 MB |
+| int16 (`config_rec_int16.yaml`) | 16 / 20 | **4.9 %** | bit-identical | 24.0 MB |
 
-int16 recovers most of what int8 lost — `IPA→PA`, `Cf→f`, `OTNHO→CT|NHO`,
-`TKing→hKig`, `JRNER→CRNER`, `0RCHARD→0CHARD` all come back. Two things worth
-noting:
+Two readings of the same data:
 
-- **int16's layer B is bit-identical again.** The default int8 build drifted 2e-4
-  because its mixed int8/int16/int32 graph runs float CPU ops; forcing the whole
-  graph to int16 restores the pure fixed-point path, and the board matches the
-  host exactly. This is the same effect LAS2 (all int16) and det (all int8) show.
-- **The three crops int16 still misses are rare CJK glyphs** (e.g. one 运动场
-  sign) where even int16 differs slightly from float.
+- **int16 more than halves the character error** (4.9 % vs 12.6 %) and is the
+  build to use when recognition accuracy matters. Its layer B is bit-identical
+  again — a pure int16 graph has no float CPU ops to drift through, unlike the
+  mixed default.
+- **int8 is better than it first looked.** Most of its errors are single-glyph:
+  `bywolu→bywolun`, `PA→IPA`, simplified-vs-traditional `大國→大国`, and in one
+  case int8 is *more* complete than the float reference (`TheKig'→TheKing'`).
+  Exact-match 9/20 reads worse than the 12.6 % CER because one wrong glyph fails
+  a whole line. For easy, well-cropped Latin text int8 is fine.
 
-**Recommendation:** use `config_rec_int16.yaml` when recognition accuracy
-matters. int8 is fine for easy, well-cropped Latin text; it degrades visibly on
-harder crops. The int16 latency cost is real (bigger instruction stream) but
-unmeasured on the board.
+An earlier version of this table (stretch preprocessing) reported int8 at 8/20
+and made int8 look far worse — that was the preprocessing distortion, not the
+quantiser. Fixing the preprocessing lifted both builds and shrank the gap; the
+int16 advantage is real but smaller than a stretched measurement implied.
 
 **Still not done:** no latency measurement (needs `hrt_model_exec perf` on a
 quiet board), and no end-to-end accuracy against a labelled page set.

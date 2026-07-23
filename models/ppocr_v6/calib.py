@@ -52,15 +52,42 @@ NORM = {
 
 
 def preprocess(path: str, task: str, h: int, w: int) -> np.ndarray:
+    """Match the DEPLOYMENT preprocessing in BCDL's ocr_demo exactly.
+
+    Calibration must see the same distribution the runtime feeds, and the two
+    tasks preprocess differently (this is BCDL's packNchw vs packNchwPad):
+
+      det : anamorphic resize to HxW (a page is stretched to 960x960).
+      rec : aspect-ratio-preserving resize to height H, then RIGHT-PAD to W with
+            zeros in normalised space. This is PaddleOCR's resize_norm_img. A
+            plain resize to (W,H) stretches a short line to fill 320 wide, which
+            distorts the glyphs AND gives the calibrator a distribution the
+            runtime never produces.
+
+    Both use RGB (BGR read, R into channel 0), matching BCDL/ccdl. (Upstream
+    PaddleOCR's own inference feeds BGR; the deployment target here is BCDL, and
+    calibration follows the deployment, not upstream.)
+    """
     img = cv2.imread(path, cv2.IMREAD_COLOR)
     if img is None:
         raise SystemExit(f"could not read {path}")
     img = img[:, :, ::-1]                                   # BGR -> RGB
-    img = cv2.resize(img, (w, h), interpolation=cv2.INTER_LINEAR)
-    x = img.astype(np.float32) / 255.0
     mean, std = NORM[task]
-    x = (x - mean) / std
-    return np.ascontiguousarray(x.transpose(2, 0, 1))        # CHW
+
+    if task == "det":
+        img = cv2.resize(img, (w, h), interpolation=cv2.INTER_LINEAR)
+        x = (img.astype(np.float32) / 255.0 - mean) / std
+        return np.ascontiguousarray(x.transpose(2, 0, 1))
+
+    # rec: aspect-preserving + right-pad, mirroring packNchwPad.
+    ratio = img.shape[1] / max(img.shape[0], 1)
+    rw = int(np.ceil(h * ratio))
+    rw = max(1, min(rw, w))
+    resized = cv2.resize(img, (rw, h), interpolation=cv2.INTER_LINEAR)
+    x = (resized.astype(np.float32) / 255.0 - mean) / std   # HWC, only rw wide
+    out = np.zeros((3, h, w), np.float32)                   # pad = 0 (norm space)
+    out[:, :, :rw] = x.transpose(2, 0, 1)
+    return np.ascontiguousarray(out)
 
 
 def main():

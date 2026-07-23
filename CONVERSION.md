@@ -103,9 +103,17 @@ un-normalised calibration data compiles perfectly and decodes to garbage.
 - **Domain match beats sample count.** 20-100 samples is plenty. Data from the
   actual deployment domain wins: on LAS2, 5 same-domain stereo pairs gave EPE
   0.12px and adding 54 out-of-domain pairs made it *worse* (0.26px).
-- **Preprocess exactly as you deploy.** Same letterboxing, same resolution. On
-  a stereo model, calibrating with a resize and deploying with a crop changes
-  the disparity range and the output collapses.
+- **Preprocess exactly as you deploy — and confirm what "deploy" actually does.**
+  Same letterboxing, same resolution, same channel order. On a stereo model,
+  calibrating with a resize and deploying with a crop changes the disparity range
+  and the output collapses. On PP-OCRv6 recognition, a plain `resize(320,48)`
+  *stretches* short lines while the runtime does aspect-preserving resize +
+  right-pad; that single mistake distorted the calibration set AND every
+  evaluation, made int8 look far worse than it was, and even lifted the int8
+  output cosine from 0.9747 to 0.9819 once fixed. **Read the deployment code's
+  preprocessing, don't assume it.** When a task metric exists, the fastest way to
+  catch a preprocessing mismatch is to run the *float* model through your
+  pipeline first: if float already degrades, the bug is upstream of quantisation.
 
 `norm_type` is also formally deprecated (normalisation is inferred from whether
 mean/scale are present), but it is still honoured and every config here sets it
