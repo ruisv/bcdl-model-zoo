@@ -1,0 +1,33 @@
+{
+  "model": "yolo26s_det_nashm_640x640_nv12",
+  "upstream": "YOLO26s (Ultralytics), detection",
+  "input_shape": "1x3x640x640",
+  "input_format": "nv12 at runtime, rgb [0,1] at train/calibration",
+  "outputs": "6 raw split-head tensors (3 scales x [cls nc, box 4*reg_max]) in NHWC; BCDL does DFL + anchors + sigmoid + NMS on the CPU",
+  "quantisation": "int8",
+  "march": "nash-m",
+  "licence": "Ultralytics YOLO26 is AGPL-3.0 — copyleft; commercial use needs Ultralytics' Enterprise licence. RECIPE ONLY: no redistributable .hbm.",
+  "toolchain": {
+    "openexplorer": "3.7.0",
+    "note": "opset 19, IR capped to 9. The split-head cut keeps the BPU on pure convolution; the decode is CPU-side in BCDL."
+  },
+  "cosine": {
+    "A": 0.99,
+    "B": 1.0,
+    "C": 0.99,
+    "note": "Per raw head tensor. The real detection acceptance is mAP after the CPU decode, which is a BCDL-side check, not a cosine on the head."
+  },
+  "the_cut": {
+    "why": "The stock Detect head decodes with DFL integral, anchor-grid meshgrid, dist2bbox, sigmoid and NMS — a mix of poorly-quantised and non-BPU-native ops that also bake a fixed anchor layout into the binary.",
+    "fix": "Stop the graph at the raw cv2/cv3 conv outputs (NHWC) and decode on the CPU. BPU runs pure convolution; one .hbm layout serves. Same cut as YOLOE det, without the open-vocab text-embedding fuse."
+  },
+  "task_metric": {
+    "name": "COCO mAP after CPU decode",
+    "threshold": null,
+    "note": "Not re-measured in this repo. mAP is the acceptance for a detector; a per-head cosine cannot see NMS/decode regressions."
+  },
+  "measured": {
+    "note": "Not re-measured here. This is BCDL's main detector; its latency/mAP live in BCDL's benchmark results."
+  },
+  "status": "RECONSTRUCTED, and the highest-risk recipe in the set. The compile config was never saved (the original build used inline CLI params), so config.yaml is reconstructed from the shipped filename, the nv12/640 contract, and the split-head export. export.py mirrors the verified YOLOE detection cut. Verify the config against a fresh compile before trusting the numbers."
+}

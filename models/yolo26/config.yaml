@@ -1,0 +1,31 @@
+# YOLO26s detection, raw split heads, 640x640, nv12 input.
+#
+# RECONSTRUCTED CONFIG. This is the repo's main detector, and it is the one model
+# whose hb_compile config was never saved -- the original build passed its
+# parameters inline on the command line. The values here are reconstructed from
+# the shipped .hbm's filename, the known nv12/640 input contract, and the
+# split-head export (export.py). Verify against a fresh compile.
+#
+# Normalisation: the ONNX expects RGB in [0,1]; Ultralytics does NOT bake /255,
+# so data_scale 1/255 is the complete normalisation. nv12->rgb is the runtime
+# path; calib.py hands raw 0-255 RGB to the packer which applies the same 1/255.
+model_parameters:
+  onnx_model: "yolo26s_det_bpu.onnx"
+  march: "nash-m"
+  working_dir: "./out"
+  output_model_file_prefix: "yolo26s_det_nashm_640x640_nv12"
+input_parameters:
+  input_name: "images"
+  input_shape: "1x3x640x640"
+  input_type_train: "rgb"
+  input_type_rt: "nv12"
+  input_layout_train: "NCHW"
+  norm_type: "data_scale"
+  scale_value: "0.003921568627451"
+calibration_parameters:
+  cal_data_dir: "/ws/cal_norm/images"
+  calibration_type: "default"
+compiler_parameters:
+  optimize_level: "O2"
+  compile_mode: "latency"
+  jobs: 32
