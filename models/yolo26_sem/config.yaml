@@ -1,0 +1,46 @@
+# YOLO26n-sem semantic segmentation, dense head, 640x640, nv12 input.
+#
+# Cityscapes 19 classes. Single dense-logit output [1,19,640,640], channels
+# first, full input resolution -- see export.py for why no head cut is needed.
+#
+# int8 vs int16: the int8 (`_int8` sibling, kept for the record) build passes
+# every per-node/per-tensor cosine gate (all >0.95, output ~0.98-0.99) and
+# STILL only agrees with the float model on 61% of pixel-level argmax
+# decisions -- whole classes swap wholesale. This is the exact failure mode
+# the project's quantisation rules warn about: a dense 19-way softmax
+# classifier is decision-boundary sensitive in a way a single aggregate
+# cosine number does not see. `set_all_nodes_int16` alone recovers to 85%.
+#
+# Calibration domain: the remaining gap was NOT quantisation. This config's
+# cal_data_dir must be built from REAL Cityscapes frames (see calib.py) --
+# calibrating the same int16 config on a different road-scene domain
+# (nuScenes CAM_FRONT) measured only 85% agreement; real Cityscapes frames
+# get to 96% at identical latency/memory. See README.md for the full
+# int8-vs-int16-vs-domain table and how the agreement was measured.
+#
+# Normalisation: the ONNX expects RGB in [0,1]; Ultralytics does NOT bake
+# /255 into this head either (verified: `images` feeds straight into the
+# first Conv), so data_scale 1/255 is the complete normalisation, the same
+# convention as ../yolo26/config.yaml. nv12->rgb is the runtime path;
+# calib.py hands raw 0-255 RGB to the packer which applies the same 1/255.
+model_parameters:
+  onnx_model: "yolo26n_sem_bpu.onnx"
+  march: "nash-m"
+  working_dir: "./out_int16"
+  output_model_file_prefix: "yolo26n_sem_nashm_640x640_nv12"
+input_parameters:
+  input_name: "images"
+  input_shape: "1x3x640x640"
+  input_type_train: "rgb"
+  input_type_rt: "nv12"
+  input_layout_train: "NCHW"
+  norm_type: "data_scale"
+  scale_value: "0.003921568627451"
+calibration_parameters:
+  cal_data_dir: "/ws/cal_norm/images"
+  calibration_type: "default"
+  optimization: "set_all_nodes_int16"
+compiler_parameters:
+  optimize_level: "O2"
+  compile_mode: "latency"
+  jobs: 32

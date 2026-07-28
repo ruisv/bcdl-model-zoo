@@ -1,0 +1,34 @@
+{
+  "model": "yolo26n_sem_nashm_640x640_nv12",
+  "upstream": "YOLO26n-sem (Ultralytics), semantic segmentation, Cityscapes 19-class",
+  "input_shape": "1x3x640x640",
+  "input_format": "nv12 at runtime, rgb [0,1] at train/calibration",
+  "outputs": "one dense-logit tensor [1,19,640,640], channels-first, full input resolution; BCDL argmaxes on the CPU (bcdl::Segmenter/decodeSeg, same decoder as DeepLabV3+ and PIDNet-S)",
+  "quantisation": "int16 (set_all_nodes_int16), calibrated on 24 real Cityscapes validation frames -- SHIPPED. int8 also compiles and passes every per-tensor cosine gate but only agrees with the float model on 61% of pixel-level argmax decisions; int16 alone (still calibrated on a domain stand-in) gets to 85%; switching calibration to real Cityscapes frames gets to 96%. See README.md and config_int8.yaml (kept as the documented cautionary example, not shipped).",
+  "march": "nash-m",
+  "licence": "Ultralytics YOLO26 is AGPL-3.0 -- copyleft; commercial use needs Ultralytics' Enterprise licence. RECIPE ONLY: no redistributable .hbm.",
+  "toolchain": {
+    "openexplorer": "3.7.0",
+    "note": "opset 19, IR9 natively (no cap needed). No operator rewrite: op profile is Conv/Sigmoid/Mul + one Softmax/MatMul/Transpose attention block (same as the detector) + three Resize nodes (two nearest FPN upsamples, one linear final upsample -- all already proven on this stack by yolo26 det and pidnet respectively). Max tensor rank 4."
+  },
+  "cosine": {
+    "A": 0.9956,
+    "B": 1.0,
+    "C": 0.9956,
+    "note": "Measured on a real held-out nuScenes CAM_FRONT frame -- deliberately a different domain than the Cityscapes calibration set, the harder check -- via verify_prep.py + verify_gen_ref.py + verify_cmp.py, shipped int16 build. B is bit-identical, confirming the whole int8-vs-int16-vs-calibration-domain accuracy story lives entirely in quantisation, not runtime plumbing. Cosine alone does not gate this model -- see task_metric."
+  },
+  "the_cut": {
+    "why": "None needed. Unlike detect/seg/pose/obb, SemanticSegment's inference forward is already just a classifier conv + bilinear upsample -- no NMS, no anchors, no DFL integral to decode.",
+    "fix": "N/A -- model.export(format=\"onnx\") is used unmodified."
+  },
+  "task_metric": {
+    "name": "pixel-level argmax agreement (bc/hbm vs float onnx, real image)",
+    "threshold": null,
+    "note": "int8 (nuScenes-domain calib): 61%. int16 (nuScenes-domain calib): 85%. int16 (real Cityscapes calib, SHIPPED): 96%. Cosine passed the standard >=0.99 gate at int16 well before the calibration-domain fix (0.9948 with nuScenes calib) while real per-pixel disagreement was still 15% -- this model is the reason the >=0.99 cosine gate is not sufficient on its own for a dense per-pixel classifier, the same caveat OSNet's int8 PTQ documents for embeddings. Two independent fixes were needed and are both load-bearing: int8->int16 (bit-width) and stand-in-domain->real-Cityscapes-domain calibration (activation statistics), measured on the SAME held-out test image each time to isolate the effect of each change."
+  },
+  "measured": {
+    "perf": "137 FPS / 7.28ms latency / 183MB DDR (int16, hb_compile hrt_model_exec estimate; identical for both nuScenes- and Cityscapes-calibrated builds -- calibration set does not affect compiled latency/memory). int8 for comparison: 809 FPS / 1.24ms / 37MB -- not shipped, see quantisation note.",
+    "qualitative": "A real Cityscapes photo run through BCDL's actual Segmenter + seg_colorize on the S100P board produces a coherent segmentation for both the nuScenes- and Cityscapes-calibrated builds: road, sidewalk, vehicles, buildings/sky and a motorcyclist are all cleanly separated. The residual ~4% pixel-level disagreement (Cityscapes-calibrated build) with the float model concentrates at class boundaries rather than being random."
+  },
+  "status": "Freshly converted and board-validated in this recipe (not reconstructed). Exported, calibrated, compiled at int16 after int8 was measured to fail a real per-pixel check despite passing every cosine gate, recalibrated on 24 real Cityscapes validation frames (an ungated Hugging Face Parquet mirror, Chris1/cityscapes -- the official site requires account registration) after a nuScenes-domain stand-in was measured to leave a real accuracy gap despite int16, three-layer verified (A=0.9956, B=1.0 bit-identical, C=0.9956 on a real held-out cross-domain image), and run end-to-end through BCDL's actual Segmenter on a real S100P board (tests/test_board_models.py::test_semantic_seg_cityscapes_yolo26), producing a visually coherent segmentation on a real Cityscapes photo. Both open items from the first pass (int8 vs int16, calibration domain) are closed."
+}
