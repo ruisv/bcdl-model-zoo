@@ -1,0 +1,32 @@
+# LingBot-Depth v0.5, 1200 tokens (30x40 grid -> 420x560 encoder input).
+#
+# Fully int16 (`set_all_nodes_int16`). int8 is not a slower/faster trade here:
+# it collapses the output's dynamic range to 2.9-13.8 m against the float
+# model's 0.97-45.8 m, at 233% absolute relative error, and it compiles without
+# a single warning. See README.md and expected.json "rejected_builds".
+#
+# Both inputs are `featuremap` + `no_preprocess`: normalisation, the resize and
+# the log remap all happen on the host, so the graph holds only static tensor
+# ops. calib.py is the single definition of that preprocessing.
+model_parameters:
+  onnx_model: "lingbot_depth_v05_480x640_slim.onnx"
+  march: "nash-m"
+  working_dir: "./out"
+  output_model_file_prefix: "lingbot_depth_v05_int16_nashm"
+input_parameters:
+  input_name: "image;depth_log"
+  input_type_rt: "featuremap;featuremap"
+  input_type_train: "featuremap;featuremap"
+  norm_type: "no_preprocess;no_preprocess"
+  # The encoder grid lives here and nowhere else: calib.py reads it from this
+  # file, so changing --tokens on export.py and forgetting to change the
+  # calibration resolution is not possible. 30x40 tokens x 14 px = 420x560.
+  input_shape: "1x3x420x560;1x1x420x560"
+calibration_parameters:
+  cal_data_dir: "/ws/cal/image;/ws/cal/depth_log"
+  calibration_type: "default"
+  optimization: "set_all_nodes_int16"
+compiler_parameters:
+  optimize_level: "O2"
+  compile_mode: "latency"
+  jobs: 24

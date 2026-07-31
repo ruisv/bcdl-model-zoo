@@ -174,6 +174,18 @@ the column to compare candidate builds against each other and to find outliers
 worth attention — never to accept or reject a build. That decision belongs to
 `expected.json`.
 
+**The one shape that does predict failure: a whole operator class collapsing.**
+LingBot-Depth's int8 build is the counter-example that sharpens the rule. Its
+per-layer report is not a broad mild sag like LAS2's — it has *every* LayerNorm
+and softmax `Mul` node at ~0.006 cosine, with 1056 of 1418 nodes below 0.90, and
+the build really is unusable (233% absolute relative error, dynamic range
+collapsed). The difference is categorical, not a matter of degree, so **group the
+report by operator type before judging it**. A median that sags is normal; an
+operator class pinned at zero means that operator has no usable range at this bit
+width, and no amount of end-to-end luck will rescue it. On a 24-layer ViT-L this
+saved a board trip — the verdict was legible before anything was compiled to
+`.hbm`.
+
 Two more columns worth reading correctly:
 
 - **`Output Data Type`** is the real evidence of what your quantisation
@@ -259,3 +271,31 @@ never the presence or absence of compile-time messages.
 `_crop` are not decoration. Keep the file name matching the model name inside
 it; renaming a `.hbm` to something convenient has already caused one round of
 "which calibration was this?" archaeology.
+
+**hbdk's latency estimate models compute, not DDR.** The number in
+`<prefix>.json` (`performance.latency (ms)`) was within 9% of the board on
+LingBot-Depth's int8 build — and 2.1× optimistic on the int16 build of the same
+graph (680 ms estimated, 1457 ms measured). The int16 build is DDR-bound: its
+attention matmuls compute for 4.3 ms inside a 21.9 ms slot, and the graph moves
+23 GB per frame against int8's 4.2 GB. Before trusting the estimate, check
+`DDR megabytes per run` and compare `computing cost (no DDR)` against
+`active period of time` per layer. When those diverge, the estimate is a lower
+bound and the board is the only answer.
+
+**Size a big transformer with truncated probes before paying for a full
+compile.** Export the same graph with N and M transformer blocks (everything else
+identical, so every op type and tensor shape survives), run `hb_compile
+--fast-perf` on both — no calibration data needed — and the per-block cost and
+fixed overhead fall out of two points. On LingBot-Depth, 1-block 15.65 ms and
+3-block 33.42 ms gave 8.885 ms/block plus 6.77 ms fixed, predicting 220 ms for
+the real 24-block model against 255 ms measured. Two five-minute compiles instead
+of a two-hour one, and it answers "is this model even in the right order of
+magnitude" before you commit to calibrating it.
+
+**When the graph is DDR-bound on attention, resolution is the lever.** Attention
+cost is quadratic in sequence length, so a model with a tunable token count has a
+much better speed knob than bit width. LingBot-Depth's own measurements: dropping
+1200 → 768 tokens makes attention 2.4× cheaper for +0.55pp absolute relative
+error — while the int16 quantisation it is already paying for costs 2.92%. Check
+whether the accuracy you would trade away is smaller than the accuracy you have
+already spent; often it is.

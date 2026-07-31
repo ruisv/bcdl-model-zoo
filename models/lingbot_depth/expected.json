@@ -1,0 +1,139 @@
+{
+  "model": "lingbot_depth_v05_int16_nashm",
+  "upstream": "LingBot-Depth v0.5 (MDM v2, DINOv2 ViT-L/14 RGB-D)",
+  "task": "RGB-D depth refinement: noisy/holey sensor depth + aligned RGB -> hole-filled metric depth + trust mask",
+  "input_shape": "1x3x420x560 (image) ; 1x1x420x560 (depth_log)",
+  "output_shape": "1x1x480x640 (depth, metric) ; 1x1x480x640 (mask_logit, pre-sigmoid)",
+  "tokens": 1200,
+  "quantisation": "int16",
+  "march": "nash-m",
+  "toolchain": {
+    "openexplorer": "3.7.0",
+    "hbdk": "4.7.5",
+    "board_system": "4.0.5",
+    "note": "Recorded so a future failure can be attributed. The host HBDK and the board HBRT must match; 3.7.0 host pairs with 4.0.5 board."
+  },
+  "cosine": {
+    "A": 0.98,
+    "B": 1.0,
+    "C": 0.98
+  },
+  "graph_rewrite": {
+    "what": "Token preparation rebuilt without depth_masking, which drops depth tokens whose 14x14 patch holds no valid reading and therefore makes the sequence length data-dependent.",
+    "fidelity_vs_upstream": {
+      "max_abs_err": 0.0,
+      "note": "Bit-identical to upstream's own forward when the RGB resize antialiases. The rewrite itself introduces nothing."
+    },
+    "cost_of_dropping_the_masking": {
+      "mean_absrel": 0.0006,
+      "worst_scene_rmse_m": 0.048,
+      "mask_iou": 0.9999,
+      "bit_identical_scenes": "4 of 8",
+      "caveat": "Measured on scenes that are 87-100% valid depth. Sparse input (lidar, sparse feature depths) is NOT covered by this number, and is the case where the dropped tokens carry information."
+    }
+  },
+  "host_preprocessing": {
+    "note": "The .hbm holds only static tensor ops; resize, normalisation and the log remap are the host's job. calib.py is the single definition, BCDL's src/tasks/depth_refine.cc mirrors it.",
+    "rgb_resize": "AREA average (not bilinear)",
+    "resize_error_vs_reference_antialiased": {
+      "area": 0.00061,
+      "plain_bilinear": 0.00091
+    }
+  },
+  "measured": {
+    "note": "Measured on S100P through BCDL's own Engine, so the figures include the packed -> padded-stride input scatter the runtime performs. Board was verified quiet first via a known model's latency, not by load average.",
+    "date": "2026-07-31",
+    "absrel_vs_fp32": 0.0292,
+    "median_absrel_vs_fp32": 0.0181,
+    "mae_m": 0.4992,
+    "rmse_m": 1.9685,
+    "delta_lt_1.05": 0.8907,
+    "delta_lt_1.25": 0.9790,
+    "cosine_vs_fp32": 0.988977,
+    "mask_iou_vs_fp32": 0.9592,
+    "output_range_m": [0.962, 46.052],
+    "fp32_output_range_m": [0.969, 45.794],
+    "global_scale_vs_fp32": 0.9397,
+    "latency_ms": 1457,
+    "fps": 0.69,
+    "hbm_bytes": 1064611192,
+    "node_info": {
+      "median_per_layer_quantised_cosine": null,
+      "note": "The int8 build's per-layer report is the interesting one -- see rejected_builds. For the int16 build the end-to-end figures above are the gate."
+    }
+  },
+  "performance_analysis": {
+    "verdict": "DDR-bound, not compute-bound.",
+    "attention_matmul": "4.3 ms of compute inside a 21.9 ms slot",
+    "ddr_per_frame_gb": {
+      "int16": 23.0,
+      "int8": 4.2
+    },
+    "cause": "Image and depth tokens are concatenated, so the attention sequence is 1 + 2N. At N=1200 that is 2401, and a 16 x 2401 x 2401 int16 score matrix is 184 MB, materialised to DDR twice per block across 24 blocks.",
+    "hbdk_estimate_ms": 680,
+    "hbdk_estimate_note": "2.1x optimistic against 1457 ms measured, while the same estimator was within 9% on the int8 build (235 vs 255 ms). Do not trust the compiler's latency estimate on a DDR-bound graph.",
+    "per_block_cost_from_probes": {
+      "1_block_ms": 15.65,
+      "3_block_ms": 33.42,
+      "derived_per_block_ms": 8.885,
+      "derived_fixed_overhead_ms": 6.77,
+      "note": "int8 probes via --fast-perf. Extrapolating to 24 blocks predicted 220 ms against 255 ms measured -- a cheap way to size a transformer before paying for a full compile."
+    }
+  },
+  "token_budget": {
+    "note": "The only real latency lever, and quadratic. fp32 accuracy measured against a 3600-token reference on the bundled scenes. Every row here costs less than the 2.92% int16 quantisation already costs, so drop tokens before reaching for anything cleverer.",
+    "reference_tokens": 3600,
+    "rows": [
+      {"tokens": 1200, "grid": "30x40", "encoder": "420x560", "sequence": 2401, "attention_cost": 0.112, "absrel": 0.0120, "median_absrel": 0.0018, "delta_lt_1.05": 0.9518, "shipped": true},
+      {"tokens": 768, "grid": "24x32", "encoder": "336x448", "sequence": 1537, "attention_cost": 0.046, "absrel": 0.0175, "median_absrel": 0.0029, "delta_lt_1.05": 0.9172, "shipped": false},
+      {"tokens": 432, "grid": "18x24", "encoder": "252x336", "sequence": 865, "attention_cost": 0.015, "absrel": 0.0256, "median_absrel": 0.0046, "delta_lt_1.05": 0.8871, "shipped": false}
+    ],
+    "why_1200": "Bottom of upstream's trained range [1200, 3600], and its decoder pyramid lands exactly on 480x640 (30x40 x16), making the graph's final resize the identity."
+  },
+  "task_metric": null,
+  "rejected_builds": [
+    {
+      "name": "int8 (all)",
+      "absrel": 2.33,
+      "cosine": 0.526,
+      "mask_iou": 0.558,
+      "output_range_m": [2.907, 13.777],
+      "latency_ms": 255,
+      "fps": 3.92,
+      "why": "Not noise -- the dynamic range collapses, against a float range of 0.97-45.8 m. Compiles without a single warning. A 24-layer ViT-L is the case the all-int16 rule exists for.",
+      "predicted_in_advance": {
+        "source": "*_quant_info.json per-layer cosine, read before spending board time",
+        "worst_nodes": "LayerNorm and softmax Mul at 0.006 cosine",
+        "nodes_below_0.90": "1056 of 1418",
+        "how_to_read_it": "Per-layer cosine is normally a localisation tool rather than a gate -- LAS2 ships with two thirds of layers below 0.99 and a 0.99995 output. What is diagnostic here is a whole OPERATOR CLASS collapsing to ~0, not a broad mild sag. Group the report by op type before judging."
+      }
+    }
+  ],
+  "recipe_fidelity": {
+    "checked": "2026-07-31",
+    "what": "This recipe's calib.py was re-run against the upstream example scenes and its output compared against the calibration set the shipped .hbm was actually built from.",
+    "result": "bit-identical, max abs difference 0.0 across all 15 pairs of both inputs",
+    "why_it_matters": "The recipe is executable rather than reconstructed from notes: the preprocessing here IS the preprocessing the shipped model was calibrated with, not a description of it."
+  },
+  "calibration": {
+    "samples": 15,
+    "source": "the eight scenes bundled with the upstream repo, plus horizontal mirrors, one scene held out as the golden",
+    "domain": "real indoor sensor depth at 640x480",
+    "caveat": "Domain-matched to upstream's examples, not to any particular camera. Deploying against a specific depth source (a stereo rig through LAS2, a given ToF module) warrants recalibrating on that source -- a ten-minute job, and this repo's own LAS2 and PIDNet results show domain match beating sample count."
+  },
+  "board_verification": {
+    "date": "2026-07-31",
+    "board": "S100P",
+    "hbrt": "4.7.5",
+    "layer_C_hbm_vs_fp32": {
+      "cosine": 0.988977,
+      "absrel": 0.0292,
+      "mask_iou": 0.9592,
+      "verdict": "PASS"
+    },
+    "runtime_integration": {
+      "verdict": "PASS",
+      "note": "BCDL's tasks/depth_refine drives this model end to end: hole-filling, scale consistency against the input depth, point-cloud geometry, and C++/numpy preprocessing parity all asserted on-board (tests/test_depth_refine_board_py.py)."
+    }
+  }
+}

@@ -23,7 +23,7 @@ copyleft (AGPL) and some are non-commercial.
 
 | model | upstream licence |
 |---|---|
-| PP-OCRv6/v5 det·cls·rec, ViTPose-S, XFeat, SPAN, Real-ESRGAN Compact, YOLOP, PIDNet-S, Depth-Anything-V2 **Small** | Apache-2.0 / MIT / BSD |
+| PP-OCRv6/v5 det·cls·rec, ViTPose-S, XFeat, SPAN, Real-ESRGAN Compact, YOLOP, PIDNet-S, LingBot-Depth, Depth-Anything-V2 **Small** | Apache-2.0 / MIT / BSD |
 | YOLO26 / YOLOv8 / YOLOE (Ultralytics) | **AGPL-3.0** — copyleft; commercial use needs Ultralytics' Enterprise licence |
 | SCRFD / ArcFace (insightface), Depth-Anything-V2 **Base and up** | non-commercial weights; for a commercial build see the alternatives noted per model |
 | LAS2, EdgeSAM, OSNet | upstream terms not yet reviewed — check before redistribution |
@@ -98,6 +98,7 @@ survived, the measured fields are `null` on purpose, never invented.
 | [`ppocr_v5`](models/ppocr_v5/) — OCR det + rec + cls | recipe | kept for the **angle classifier v6 lacks** (v5 det/rec are a fallback). The export rot is the write-up: the surviving PaddleOCR script pointed at a `PP-OCRv4_server_seal_det` (wrong model *and* version) with the shape-fix commented out. Dictionary count asserted against the ONNX output width |
 | [`face`](models/face/) — SCRFD det + ArcFace rec | recipe | both ONNX come from the insightface `buffalo_l` pack (locate + tiny edit, not a torch export). The `_aligned` calibration is the shipped build; int8/int16 recognition builds. **insightface weights non-commercial — recipe only** |
 | [`edgesam`](models/edgesam/) — promptable seg | recipe | encoder + two fixed-prompt decoders (sp1 / bp2). The multi-input decoder calibration feeds real encoder embeddings + sampled prompts. Upstream terms unreviewed — recipe only |
+| [`lingbot_depth`](models/lingbot_depth/) — RGB-D depth refinement | complete | compiled and **board-verified** (C 0.989, absrel 2.92%, mask IoU 0.959). The upstream graph is not compilable as written — it drops depth tokens by validity, so the sequence length depends on the data; the rewrite is **bit-identical** to upstream with that masking off. int8 collapses the output's dynamic range (233% absrel) and the per-layer report **predicted it**. **DDR-bound at 1457 ms**, with a measured token-budget/accuracy curve for trading it down |
 
 Every model here is one BCDL has a decoder for and has run on the board. Not in
 this repo, by design: the **download-only** entries in BCDL's catalogue (Depth-
