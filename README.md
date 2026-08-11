@@ -120,8 +120,11 @@ mono3d), which would ship a recipe with no end-to-end path to validate it.
 
 ## Getting the compiled binaries
 
-Recipes rebuild any model from its upstream checkpoint, and for most models that
-is the only route offered here. Only the first row of the licence table above —
+**No compiled binaries are hosted here today** — every model in this repo is
+built from its recipe, and that is the only route currently offered. The rest of
+this section is the rule that would govern hosting if it is ever added.
+
+Only the first row of the licence table above —
 the models whose **weights**, not merely whose code, carry a licence that permits
 redistribution — is eligible to be hosted as a compiled binary. Everything else
 is **recipe-only** by design: build it yourself from weights you are licensed to
