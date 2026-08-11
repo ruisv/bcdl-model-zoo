@@ -5,7 +5,13 @@
   "output_shape": "1x3x512x512",
   "quantisation": "int8 (default; no per-node override in config.yaml)",
   "march": "nash-m",
-  "licence": "SPAN upstream is Apache-2.0. The .hbm is a derivative of the upstream weights; check their terms before commercial redistribution.",
+  "licence": {
+    "tier": "A — redistributable, one caveat",
+    "detail": "The SPAN project states Apache-2.0 (LICENSE.txt, inherited from its BasicSR fork). The spanx4_ch48 checkpoint is NOT in the repo — it ships from a separate file host with no terms attached to the artefact, so the grant rests on the project-level statement rather than on the file itself. Low practical risk, but it is the weakest of the permissive set.",
+    "redistributable": true,
+    "commercial": true,
+    "reviewed": "2026-08-11"
+  },
   "toolchain": {
     "openexplorer": "3.7.0",
     "hbdk": "4.7.5",

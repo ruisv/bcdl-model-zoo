@@ -11,7 +11,13 @@
   },
   "quantisation": "compiler default (no optimization directive) — predominantly int8. Not independently re-verified in this repo.",
   "march": "nash-m",
-  "licence": "XFeat (accelerated_features) is Apache-2.0. The pretrained xfeat.pt follows the same repo's terms — check before redistribution.",
+  "licence": {
+    "tier": "A — redistributable, incl. commercially",
+    "detail": "Apache-2.0. The pretrained xfeat.pt is committed inside the Apache-2.0 repo, so the same grant that covers the code covers the weights. Ship a copy of the Apache-2.0 licence and note that the .hbm is a modified (quantised) derivative.",
+    "redistributable": true,
+    "commercial": true,
+    "reviewed": "2026-08-11"
+  },
   "toolchain": {
     "openexplorer": "3.7.0",
     "hbdk": "4.7.5",

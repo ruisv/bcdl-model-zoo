@@ -6,7 +6,13 @@
   "output_shape_note": "133 = 17 body + 6 foot + 68 face + 42 hand. The 64x48 spatial size (input/4) is RECONSTRUCTED, not confirmed from salvage; verify against the exported graph and correct if it differs.",
   "quantisation": "compiler-default mixed (no forced bit width); LayerNorm-adjacent layers expected int16, rest int8. Not measured.",
   "march": "nash-m",
-  "licence": "Apache-2.0 (easy_ViTPose / ViTPose). The pretrained wholebody weights follow their own terms — check before redistribution.",
+  "licence": {
+    "tier": "B — redistributable, NON-COMMERCIAL",
+    "detail": "Apache-2.0 covers the ViTPose / easy_ViTPose CODE; the whole-body checkpoint does not inherit it. The checkpoint is fine-tuned from MAE, whose weights are CC-BY-NC-4.0, and trained on COCO-WholeBody, which states research / non-commercial use. The MAE chain is the stronger of the two: a fine-tuned checkpoint is a direct derivative of those weights, whereas dataset-to-model propagation is contested. Treat the weights and the .hbm as non-commercial.",
+    "redistributable": "non-commercial",
+    "commercial": false,
+    "reviewed": "2026-08-11"
+  },
   "toolchain": {
     "openexplorer": "3.7.0",
     "hbdk": "4.7.5",

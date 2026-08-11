@@ -7,6 +7,13 @@
   "tokens": 1200,
   "quantisation": "int16",
   "march": "nash-m",
+  "licence": {
+    "tier": "A — redistributable, incl. commercially",
+    "detail": "Apache-2.0 on both the code repo and the published weights (declared on the model card, no gated agreement). The DINOv2 backbone is Apache-2.0 for code and weights as well, and the training data is first-party — so no part of the chain is encumbered.",
+    "redistributable": true,
+    "commercial": true,
+    "reviewed": "2026-08-11"
+  },
   "toolchain": {
     "openexplorer": "3.7.0",
     "hbdk": "4.7.5",

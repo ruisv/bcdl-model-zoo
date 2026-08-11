@@ -21,12 +21,23 @@ licences.** A compiled `.hbm` is a derivative of upstream weights, so check the
 model's licence before redistributing or shipping commercially — some are
 copyleft (AGPL) and some are non-commercial.
 
-| model | upstream licence |
+**The licence on the repository is usually not the licence on the weights**, and
+that gap is where this goes wrong. A checkpoint inherits restrictions the code
+licence never mentions — from the **weights it was fine-tuned from** (ViTPose
+starts at MAE, which is CC-BY-NC) and from the **dataset it was trained on**
+(Cityscapes bars commercial use of models trained on it, explicitly). The table
+below is grouped by what you may actually do with a compiled `.hbm`, not by the
+badge on the repo. Rows marked *unresolved* are ones no upstream source answers:
+silence is not permission.
+
+| what you may do with the `.hbm` | models |
 |---|---|
-| PP-OCRv6/v5 det·cls·rec, ViTPose-S, XFeat, SPAN, Real-ESRGAN Compact, YOLOP, PIDNet-S, LingBot-Depth, Depth-Anything-V2 **Small** | Apache-2.0 / MIT / BSD |
-| YOLO26 / YOLOv8 / YOLOE (Ultralytics) | **AGPL-3.0** — copyleft; commercial use needs Ultralytics' Enterprise licence |
-| SCRFD / ArcFace (insightface), Depth-Anything-V2 **Base and up** | non-commercial weights; for a commercial build see the alternatives noted per model |
-| LAS2, EdgeSAM, OSNet | upstream terms not yet reviewed — check before redistribution |
+| **Redistribute, including commercially** | PP-OCRv6/v5 det·cls·rec (Apache-2.0 on code and every model card) · XFeat (weights committed in the Apache-2.0 repo) · Real-ESRGAN Compact (BSD-3, weights released by the copyright holder) · LingBot-Depth (Apache-2.0 on code and weights) · Depth-Anything-V2 **Small** |
+| **Redistribute, but non-commercial** | ViTPose-S — Apache-2.0 code, but the checkpoint is fine-tuned from **MAE (CC-BY-NC-4.0)** and trained on COCO-WholeBody · PIDNet-S — MIT code, but **Cityscapes** permits distributing trained models and bars commercial use of them in the same breath · YOLOP — MIT code and in-repo weights, but **BDD100K** limits commercial use to member organizations |
+| **Redistributable, with one thing worth checking** | LAS2 — MIT on code and weights, but the release was distilled from FoundationStereo, whose NVIDIA licence is research-only. That is upstream's compliance question rather than a term passed down · SPAN — Apache-2.0 by project statement, but the checkpoints ship from a separate file host with no terms attached to the artefact |
+| **Recipe only — copyleft** | YOLO26 / YOLOv8 / YOLOE (Ultralytics) — **AGPL-3.0**; commercial use needs Ultralytics' Enterprise licence |
+| **Recipe only — non-commercial weights** | SCRFD / ArcFace (insightface) · Depth-Anything-V2 **Base and up**; for a commercial build see the alternatives noted per model |
+| **Unresolved — do not redistribute yet** | EdgeSAM (terms not reviewed) · OSNet — MIT code, but every ReID-useful checkpoint is trained on MSMT17 / Market-1501 under academic-only agreements and no upstream source says whether that reaches the weights |
 
 ## Layout
 
@@ -109,11 +120,14 @@ mono3d), which would ship a recipe with no end-to-end path to validate it.
 
 ## Getting the compiled binaries
 
-Recipes rebuild any model from its upstream checkpoint. For the permissively
-licensed models (Apache-2.0 / MIT / BSD) the compiled `.hbm` may also be hosted
-directly; the copyleft (AGPL) and non-commercial ones are **recipe-only** and are
-never redistributed here — build them yourself from your own licensed weights.
-Each model's `expected.json` records the tier.
+Recipes rebuild any model from its upstream checkpoint, and for most models that
+is the only route offered here. Only the first row of the licence table above —
+the models whose **weights**, not merely whose code, carry a licence that permits
+redistribution — is eligible to be hosted as a compiled binary. Everything else
+is **recipe-only** by design: build it yourself from weights you are licensed to
+use. Each model's `expected.json` records its licence finding, including which
+part of the chain (code, pretrained weights, or training data) the restriction
+comes from.
 
 ## Licence
 

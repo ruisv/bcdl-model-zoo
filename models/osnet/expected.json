@@ -5,7 +5,13 @@
   "output_shape": "1x512x1x1",
   "quantisation": "int8, via QAT self-distillation (not PTQ)",
   "march": "nash-m",
-  "licence": "torchreid is MIT; the OSNet-AIN pretrained weights' terms are not yet reviewed — check before redistribution",
+  "licence": {
+    "tier": "UNRESOLVED — do not redistribute the .hbm",
+    "detail": "torchreid code is MIT, and the author has himself published an MSMT17-trained OSNet-AIN checkpoint under an MIT tag — which is an affirmative grant from the party actually bound by the dataset agreement. Against that, every ReID-useful checkpoint is trained on MSMT17 and/or Market-1501 under academic-use-only agreements, and no upstream source states whether that restriction reaches the trained weights. Unresolved rather than forbidden, but not ours to close. The clean route is the ImageNet-pretrained backbone plus your own permissively-licensed ReID data.",
+    "redistributable": false,
+    "recipe_only": true,
+    "reviewed": "2026-08-11"
+  },
   "toolchain": {
     "openexplorer": "3.7.0",
     "hbdk": "4.7.5",

@@ -1,7 +1,13 @@
 {
   "model": "ppocrv6_medium_det_960x960 + ppocrv6_medium_rec_48x320",
   "upstream": "PaddleOCR PP-OCRv6 (v3.7.0 release)",
-  "licence": "Apache-2.0",
+  "licence": {
+    "tier": "A — redistributable, incl. commercially",
+    "detail": "Apache-2.0 on the PaddleOCR code AND separately declared on each official PP-OCRv6 weights repo (det / rec). No dataset-derived restriction is stated upstream.",
+    "redistributable": true,
+    "commercial": true,
+    "reviewed": "2026-08-11"
+  },
   "march": "nash-m",
   "toolchain": {
     "openexplorer": "3.7.0",

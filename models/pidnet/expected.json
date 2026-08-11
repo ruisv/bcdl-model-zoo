@@ -6,7 +6,13 @@
   "output": "seg logits, 19 Cityscapes classes; BCDL takes the argmax",
   "quantisation": "int8",
   "march": "nash-m",
-  "licence": "PIDNet upstream terms (check XuJiacong/PIDNet before redistribution)",
+  "licence": {
+    "tier": "B — redistributable, NON-COMMERCIAL",
+    "detail": "MIT covers the PIDNet code. The binding term for the weights is the Cityscapes licence, which is unusually explicit in BOTH directions: it permits distributing derivative works that are abstract representations of the dataset, naming models trained on it, and it bars using the dataset or any derivative work for commercial purposes. So the .hbm may be redistributed non-commercially and may not be sold or used for commercial gain.",
+    "redistributable": "non-commercial",
+    "commercial": false,
+    "reviewed": "2026-08-11"
+  },
   "toolchain": {
     "openexplorer": "3.7.0",
     "note": "ONNX exported at opset 19 so the bilinear Resize lowers cleanly. Normalisation is NOT in the graph — the config applies it."

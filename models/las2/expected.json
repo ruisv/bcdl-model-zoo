@@ -4,6 +4,13 @@
   "input_shape": "1x3x480x640",
   "quantisation": "int16",
   "march": "nash-m",
+  "licence": {
+    "tier": "A — redistributable, one thing to check first",
+    "detail": "MIT on the code repo and MIT declared on the published weights. The caveat is upstream of that: the release was produced partly by distilling FoundationStereo, whose NVIDIA licence is research-only. That term binds the LAS2 authors rather than being one they passed downstream, but it is the single item worth a look before a commercial build.",
+    "redistributable": true,
+    "commercial": "check",
+    "reviewed": "2026-08-11"
+  },
   "toolchain": {
     "openexplorer": "3.7.0",
     "hbdk": "4.7.5",

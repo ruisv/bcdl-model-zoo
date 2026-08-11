@@ -6,7 +6,13 @@
   "outputs": "3 raw detection heads [1,18,{80,40,20},{80,40,20}] + drivable-area seg [1,2,640,640] + lane-line seg [1,2,640,640]",
   "quantisation": "int8",
   "march": "nash-m",
-  "licence": "YOLOP upstream terms not yet reviewed — check hustvl/YOLOP before redistribution",
+  "licence": {
+    "tier": "B — redistributable, NON-COMMERCIAL",
+    "detail": "MIT covers the code, and unusually the weights are committed inside the MIT repo, so the grant reaches them. The remaining restriction is the training data: BDD100K grants research / not-for-profit use freely and routes commercial use through the university's licensing office (free for member organizations). It says nothing about models trained on the data, so non-commercial is clear and commercial is unresolved.",
+    "redistributable": "non-commercial",
+    "commercial": "unresolved",
+    "reviewed": "2026-08-11"
+  },
   "toolchain": {
     "openexplorer": "3.7.0",
     "note": "The parent ONNX is downloaded, not re-exported (byte-identical to the upstream release asset). export.py only cuts the anchor decode."

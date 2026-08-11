@@ -1,7 +1,13 @@
 {
   "model": "ppocrv5_server_det_960x960 + ppocrv5_server_rec_48x320 + ppocrv5_lcnet_cls_80x160",
   "upstream": "PaddleOCR PP-OCRv5 (det + rec) + PP-LCNet_x1_0_textline_ori (cls)",
-  "licence": "Apache-2.0",
+  "licence": {
+    "tier": "A — redistributable, incl. commercially",
+    "detail": "Apache-2.0 on the PaddleOCR code AND separately declared on each official weights repo (det / rec / textline-orientation cls). No dataset-derived restriction is stated upstream.",
+    "redistributable": true,
+    "commercial": true,
+    "reviewed": "2026-08-11"
+  },
   "march": "nash-m",
   "why_v5_alongside_v6": "PP-OCRv6 ships no angle classifier, so the v5-only PP-LCNet textline-orientation cls is still used. v5 det/rec are kept as a documented fallback to v6 (see ../ppocr_v6/README.md).",
   "toolchain": {

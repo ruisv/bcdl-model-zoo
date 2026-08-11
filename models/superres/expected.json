@@ -5,7 +5,13 @@
   "output_shape": "1x3x512x512",
   "quantisation": "int8 PTQ (default calibration)",
   "march": "nash-m",
-  "licence": "Real-ESRGAN (xinntao/Real-ESRGAN) is BSD-3-Clause. The realesr-general-x4v3 weights ship under the same repo; check the repo's terms before redistribution.",
+  "licence": {
+    "tier": "A — redistributable, incl. commercially",
+    "detail": "Real-ESRGAN is BSD-3-Clause (Copyright (c) 2021, Xintao Wang), and realesr-general-x4v3 is a release asset of that same repo published by the copyright holder, so the weights are covered. Reproduce the BSD-3 copyright notice, conditions and disclaimer with any redistributed binary.",
+    "redistributable": true,
+    "commercial": true,
+    "reviewed": "2026-08-11"
+  },
   "toolchain": {
     "openexplorer": "3.7.0",
     "hbdk": "4.7.5",
