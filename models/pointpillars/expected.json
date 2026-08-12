@@ -28,26 +28,43 @@
   "cosine": {
     "A": 1.0,
     "B": 0.9988,
-    "C": null,
-    "note": "B is the VFE .hbm against its own float ONNX on a real sweep, de-strided (see traps). C — the board chain against a float chain end to end — was not run as a cosine, because the two available chains have different weights and a cosine between them is meaningless. The task metric below is the gate instead."
+    "C": 0.9994,
+    "note": "B is the VFE .hbm against its own float ONNX on a real sweep, de-strided (see traps). C is the whole board chain against the same chain run in onnxruntime — cls 0.9994, box 0.9745, dir 0.9584. Scoring against the PUBLISHED chain instead would be meaningless: it is different weights, so the comparison mixes the checkpoint change into the int8 cost and reads as more favourable than it is."
   },
   "task_metric": {
-    "name": "3-D boxes on a real KITTI sweep, against the published chain and against the point cloud",
-    "protocol": "Run both chains on the same sweep through BCDL (voxelize -> VFE -> scatter -> backbone+head -> decode + BEV NMS) and compare box sets; separately require every box to sit on actual returns, with a range-dependent floor.",
-    "threshold": "boxes within 1 m and the same class as the published chain's, for the large majority; every box on >= 40 points inside 20 m and >= 5 beyond",
-    "measured": "14 boxes vs the published chain's 16; 12 of the 14 same class within 1 m; the six highest-scoring agree to under 0.1 m in position and 0.06 rad in heading. Point support 552-3212 per box inside 20 m; the furthest box (62 m) has 8, which is what a car at 62 m looks like.",
-    "note": "Standing check in BCDL as tests/test_lidar_board_py.py, which runs against whichever chain is installed."
+    "name": "3-D boxes on a real KITTI sweep: against the chain's own float, and against the point cloud",
+    "protocol": "Run the exported ONNX pair in onnxruntime and the compiled pair on the board on the SAME sweep, decode both with the same host decoder (BCDL decode_det3d + BEV NMS), and compare box sets. Separately require every box to sit on actual returns, with a range-dependent floor. Comparing against the PUBLISHED chain instead is not a quantisation measurement: it is different weights.",
+    "threshold": "board box count within 1 of float's at threshold 0.3; matched centres under 0.2 m; >= 90% of the anchors float scores above 0.3 still above it on the board",
+    "measured": "board 18 boxes vs float 18; matched centres 0.070 m mean / 0.136 m max; scores 0.035 low on average; 169 of 181 (93%) of float's >0.3 anchors survive; 1 heading flipped by pi. Point support 552-3212 per box inside 20 m; the furthest box (62 m) has 8, which is what a car at 62 m looks like. Against the published chain: 18 boxes vs its 16, 13 of the 18 same class within 1 m — that residual is the checkpoint, not the quantisation.",
+    "note": "Standing check in BCDL as tests/test_lidar_board_py.py, which runs against whichever chain is installed. NOT measured: KITTI mAP. These are single-sweep fidelity figures, answering whether the board reproduces the float model rather than how good the detector is."
   },
   "measured": {
-    "note": "S100P, hrt_model_exec perf, thread_num 1, min of 3 runs on a quiet board; spread under 1%. Latencies are the two graphs of this recipe; the comparison is the published three-stage chain.",
-    "hbm_bytes": {"vfe_conv_int8": 15756416, "bbhead_int8": 35153704},
-    "latency_ms": {"vfe_conv_int8": 1.62, "bbhead_int8": 7.20, "bpu_total": 8.82,
-                   "published_vfe": 290.0, "published_backbone": 106.2, "published_head": 7.5,
-                   "published_bpu_total": 403.7},
+    "note": "S100P, hrt_model_exec perf, thread_num 1, min of 3 runs on a quiet board; spread under 1%. Latencies are the two graphs of this recipe; the comparison is the published three-stage chain. The 8-sweep calibration costs nothing in latency or size versus the 1-sweep build it replaced.",
+    "hbm_bytes": {
+      "vfe_conv_int8": 15756160,
+      "bbhead_int8": 35153704
+    },
+    "latency_ms": {
+      "vfe_conv_int8": 1.63,
+      "bbhead_int8": 7.2,
+      "bpu_total": 8.82,
+      "published_vfe": 290.0,
+      "published_backbone": 106.2,
+      "published_head": 7.5,
+      "published_bpu_total": 403.7
+    },
     "fps": null,
-    "end_to_end_ms": {"this_chain": 43.0, "published_chain": 468.8,
-                      "note": "Through BCDL, including host voxelize / expansion / scatter / decode. Of the 43 ms, 8.8 is BPU and about 17 is host-to-device copying — 12 of that the 55 MB BEV canvas."},
-    "cosine_vs_fp32": 0.9988
+    "end_to_end_ms": {
+      "this_chain": 43.0,
+      "published_chain": 468.8,
+      "note": "Through BCDL, including host voxelize / expansion / scatter / decode. Of the 43 ms, 8.8 is BPU and about 17 is host-to-device copying — 12 of that the 55 MB BEV canvas."
+    },
+    "cosine_vs_fp32": {
+      "vfe": 0.9988,
+      "cls": 0.9994,
+      "box": 0.9745,
+      "dir": 0.9584
+    }
   },
   "rejected_builds": [
     {
@@ -61,13 +78,17 @@
     {
       "name": "drop-in replacement of the published VFE only",
       "why": "The published .hbm is not this checkpoint. Best-matching-channel median correlation is 0.904 but only 3 of 64 channels exceed 0.99 and the identity-order correlation is 0.000, so the channel ordering differs. All three stages have to be replaced together, which is why the backbone and head are re-exported here too."
+    },
+    {
+      "name": "single-frame calibration for the backbone+head",
+      "why": "It compiles clean and loses 4 of 18 boxes. Against the chain's own float: box cosine 0.897 and dir 0.848 (vs 0.9745 / 0.9584 with 8 sweeps), scores depressed 0.135, only 81% of float's >0.3 anchors surviving, and 2 headings flipped by pi. Lowering the score threshold does NOT recover them — board/float goes 14/18 at 0.30 and 24/34 at 0.15, so the gap widens: what degrades is the ranking, not a bias. Eight sweeps fix it at identical latency and file size."
     }
   ],
   "graph_rewrites": [
     {
       "op": "PillarVFE (linear + BN + ReLU + max over points) -> 1x1 Conv + MaxPool over (1, 10, P, 32)",
       "why": "Layout. The per-point MLP becomes a channel convolution and the max over points becomes a pooling window; the 10-channel expansion moves to the host. 290 ms -> 1.62 ms.",
-      "verified": "The compiled graph scores 0.9988 against the float ONNX on a real sweep, and the whole chain reproduces the published chain's boxes (see task_metric)."
+      "verified": "The compiled graph scores 0.9988 against the float ONNX on a real sweep, de-strided. Isolated: feeding the board head the FLOAT canvas gives the same error as the whole chain (0.9994/0.9745/0.9584 either way), so the VFE's contribution to the chain's error is negligible and the head is where the quantisation cost lives."
     },
     {
       "op": "AnchorHeadSingle -> cut at conv_cls / conv_box / conv_dir_cls; decode on the host",
@@ -81,13 +102,13 @@
     }
   ],
   "rebuild": {
-    "note": "This recipe was re-run end to end (export -> calib -> compile) rather than transcribed, on 2026-08-12 with OE 3.7.0.",
-    "vfe": "15756160 bytes against the shipped build's 15756416 — the recipe calibrates on 2 real KITTI sweeps where the shipped build used 1, which moves the thresholds (input 67.046 / output 11.305 vs 61.664 / 4.888, i.e. LESS output clipping) and the compiler's reported output cosine to 0.999425.",
-    "bbhead": "35153704 bytes, the same size as the shipped build.",
-    "not_rerun": "The rebuilt binaries were not themselves put back on the board; the measured section is the shipped builds."
+    "note": "This recipe was re-run end to end (export -> calib -> compile) rather than transcribed, on 2026-08-12 with OE 3.7.0, and its output REPLACED the earlier builds on the board.",
+    "vfe": "15756160 bytes. Calibrated on 8 real KITTI sweeps; input threshold 69.094, output 13.872, compiler-reported output cosine 0.999185.",
+    "bbhead": "35153704 bytes, calibrated on the same 8 sweeps.",
+    "why_it_matters": "The first builds calibrated on one frame. See rejected_builds — that is where 4 of 18 boxes went."
   },
   "board_verification": {
-    "note": "Both graphs compiled, run on an S100P, and validated end to end through BCDL against the published chain and against the point cloud (see task_metric). Latency measured min-of-3 on a quiet board. What was NOT done: KITTI mAP. The gate here is agreement with the published chain plus geometric plausibility, not a benchmark score.",
+    "note": "Both graphs compiled from this recipe, run on an S100P, and validated against the chain's own float and against the point cloud (see task_metric). Latency min-of-3 on a quiet board, unchanged by the calibration fix (1.63 / 7.20 ms). What was NOT done: KITTI mAP.",
     "trap": "The VFE's output is stride-padded — [1,64,11546,1] pads each channel by 6 float slots — so reading the device buffer flat displaces channel c by 6c and the last channel by 378 pillars. That scores 0.70 against the float reference and looks like a quantisation failure; it is a reader bug. De-strided, the board matches the compiler's own reported 0.956701 bit for bit on the int16 build. BCDL's Engine.infer() gathers padded outputs since the fix, but anyone reading outputData() directly must honour outputStride()."
   }
 }

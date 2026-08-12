@@ -81,6 +81,29 @@ The compiler's own per-layer report agrees (conv 0.9926 int16 vs 0.9999 int8).
 Neither config carries an `optimization` directive for that reason. **Do not
 "upgrade" this to int16 without re-measuring.**
 
+## Calibrate the head on more than one frame — measured, not a rule of thumb
+
+The first build of the head calibrated on a **single** sweep, and the damage did
+not show up anywhere a compile could report it:
+
+| against the chain's own float, threshold 0.3 | 1 sweep | **8 sweeps** |
+|---|---|---|
+| `cls` / `box` / `dir` cosine | 0.997 / **0.897** / **0.848** | 0.9994 / **0.9745** / **0.9584** |
+| score shift on the anchors float scores > 0.3 | −0.135 | **−0.035** |
+| those anchors surviving the threshold | 81% | **93%** |
+| boxes found (float finds 18) | **14** | **18** |
+| headings flipped by π | 2 | 1 |
+| latency | 7.20 ms | **7.20 ms** |
+
+Two things worth taking away. **The recall loss is not a threshold problem** —
+board against float went 14/18 at 0.30 and 24/34 at 0.15, so the gap *widens* as
+you lower it; what degrades is the ranking, not a bias you can dial out. And the
+better calibration is **free**: same graph, same latency, same file size.
+
+The eight sweeps are ordinary consecutive KITTI frames. This is not a diversity
+argument like the super-resolution recipes make — it is that one frame does not
+contain the activation range of a scene.
+
 ## You cannot swap one stage
 
 The published `.hbm` is **not this checkpoint**. Best-matching-channel median
