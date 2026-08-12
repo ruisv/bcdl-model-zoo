@@ -1,0 +1,27 @@
+# PointPillars 2-D backbone AND anchor head as ONE graph, cut before the decode.
+#
+# Input is the scatter canvas the host builds from the VFE's output
+# (BCDL's scatterPillars()), so again a `no_preprocess` featuremap. Outputs are
+# the three raw head tensors — cls 18, box 42, dir 12, at 248x216 — and the
+# anchor decode runs on the host. Compiling the published decode instead gives a
+# model that never writes its outputs; see the README.
+#
+# Compiler default bit width (predominantly int8), matching the VFE.
+model_parameters:
+  onnx_model: "pp_backbone_head.onnx"
+  march: "nash-m"
+  working_dir: "./out_bbhead"
+  output_model_file_prefix: "pointpillars_bbhead_int8_nashm"
+input_parameters:
+  input_name: "spatial_features"
+  input_type_rt: "featuremap"
+  input_type_train: "featuremap"
+  input_layout_train: "NCHW"
+  norm_type: "no_preprocess"
+calibration_parameters:
+  cal_data_dir: "/ws/cal_bbhead"
+  cal_data_type: "float32"
+  calibration_type: "default"
+compiler_parameters:
+  optimize_level: "O2"
+  compile_mode: "latency"
