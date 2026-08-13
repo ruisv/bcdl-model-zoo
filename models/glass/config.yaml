@@ -1,0 +1,29 @@
+# GLASS one-class anomaly detection, 288x288, int8.
+#
+# int8 is measured, not assumed: image and pixel AUROC are both 0.9905 against
+# the float model's 0.9905 / 0.9907 — identical to two decimal places — at an
+# output cosine of 0.9409. A cosine that low usually means a broken model. It
+# does not here, because AUROC is RANK-based and quantisation noise moves every
+# score slightly without reordering them. See README.md.
+#
+# `no_preprocess` because the ImageNet mean/std normalisation happens on the
+# host (BCDL's anomalyPreprocess does it), so the graph input is already
+# normalised and the compiler must not touch it again.
+model_parameters:
+  onnx_model: "glass_bottle_slim.onnx"
+  march: "nash-m"
+  working_dir: "./out"
+  output_model_file_prefix: "glass_bottle_int8_nashm_288x288"
+input_parameters:
+  input_name: "input"
+  input_type_rt: "featuremap"
+  input_type_train: "featuremap"
+  input_layout_train: "NCHW"
+  norm_type: "no_preprocess"
+calibration_parameters:
+  cal_data_dir: "/ws/cal/input"
+  cal_data_type: "float32"
+  calibration_type: "default"
+compiler_parameters:
+  optimize_level: "O2"
+  compile_mode: "latency"

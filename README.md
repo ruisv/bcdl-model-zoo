@@ -33,11 +33,37 @@ silence is not permission.
 | what you may do with the `.hbm` | models |
 |---|---|
 | **Redistribute, including commercially** | PP-OCRv6/v5 det·cls·rec (Apache-2.0 on code and every model card) · XFeat (weights committed in the Apache-2.0 repo) · Real-ESRGAN Compact (BSD-3, weights released by the copyright holder) · LingBot-Depth (Apache-2.0 on code and weights) · Depth-Anything-V2 **Small** |
-| **Redistribute, but non-commercial** | ViTPose-S — Apache-2.0 code, but the checkpoint is fine-tuned from **MAE (CC-BY-NC-4.0)** and trained on COCO-WholeBody · PIDNet-S — MIT code, but **Cityscapes** permits distributing trained models and bars commercial use of them in the same breath · YOLOP — MIT code and in-repo weights, but **BDD100K** limits commercial use to member organizations |
+| **Redistribute, but non-commercial** | GLASS — MIT code and weights, but the checkpoint is trained on **MVTec AD (CC BY-NC-SA 4.0)**, so a redistributed build carries the same terms including **share-alike**. Does not reach a deployment retrained on your own parts · ViTPose-S — Apache-2.0 code, but the checkpoint is fine-tuned from **MAE (CC-BY-NC-4.0)** and trained on COCO-WholeBody · PIDNet-S — MIT code, but **Cityscapes** permits distributing trained models and bars commercial use of them in the same breath · YOLOP — MIT code and in-repo weights, but **BDD100K** limits commercial use to member organizations |
 | **Redistributable, with one thing worth checking** | LAS2 — MIT on code and weights, but the release was distilled from FoundationStereo, whose NVIDIA licence is research-only. That is upstream's compliance question rather than a term passed down · SPAN — Apache-2.0 by project statement, but the checkpoints ship from a separate file host with no terms attached to the artefact |
 | **Recipe only — copyleft** | YOLO26 / YOLOv8 / YOLOE (Ultralytics) — **AGPL-3.0**; commercial use needs Ultralytics' Enterprise licence |
 | **Recipe only — non-commercial weights** | SCRFD / ArcFace (insightface) · Depth-Anything-V2 **Base and up**; for a commercial build see the alternatives noted per model · PointPillars — Apache-2.0 code (OpenPCDet) but the checkpoint is **KITTI**-trained, and KITTI is CC BY-NC-SA |
-| **Unresolved — do not redistribute yet** | EdgeSAM (terms not reviewed) · OSNet — MIT code, but every ReID-useful checkpoint is trained on MSMT17 / Market-1501 under academic-only agreements and no upstream source says whether that reaches the weights |
+| **Unresolved — do not redistribute yet** | NeuFlow v2 — Apache-2.0 code with the weights committed in the same repo, but trained on **FlyingThings3D**, whose terms are research-only and **silent about models trained on the data**. Silence is not permission · EdgeSAM (terms not reviewed) · OSNet — MIT code, but every ReID-useful checkpoint is trained on MSMT17 / Market-1501 under academic-only agreements and no upstream source says whether that reaches the weights |
+
+## Prebuilt `.hbm` on Hugging Face
+
+The recipes above are the reproducible half. For the models whose **weights** may
+be redistributed, the compiled artefact is published too, so a user with a board
+and no x86 host can skip all of this:
+
+| repo | recipe here | licence |
+|---|---|---|
+| [`ruisv/bcdl-ppocr-v6`](https://huggingface.co/ruisv/bcdl-ppocr-v6) | [`ppocr_v6`](models/ppocr_v6/) | Apache-2.0 |
+| [`ruisv/bcdl-ppocr-v5`](https://huggingface.co/ruisv/bcdl-ppocr-v5) | [`ppocr_v5`](models/ppocr_v5/) | Apache-2.0 |
+| [`ruisv/bcdl-las2-stereo`](https://huggingface.co/ruisv/bcdl-las2-stereo) | [`las2`](models/las2/) | MIT |
+| [`ruisv/bcdl-lingbot-depth`](https://huggingface.co/ruisv/bcdl-lingbot-depth) | [`lingbot_depth`](models/lingbot_depth/) | Apache-2.0 |
+| [`ruisv/bcdl-superres`](https://huggingface.co/ruisv/bcdl-superres) | [`superres`](models/superres/) + [`span`](models/span/) | BSD-3 / Apache-2.0 |
+| [`ruisv/bcdl-xfeat`](https://huggingface.co/ruisv/bcdl-xfeat) | [`xfeat`](models/xfeat/) | Apache-2.0 |
+| [`ruisv/bcdl-glass-bottle`](https://huggingface.co/ruisv/bcdl-glass-bottle) | [`glass`](models/glass/) | **CC BY-NC-SA 4.0** |
+| [`ruisv/bcdl-vitpose-wholebody`](https://huggingface.co/ruisv/bcdl-vitpose-wholebody) | [`vitpose`](models/vitpose/) | **non-commercial** |
+| [`ruisv/bcdl-pidnet`](https://huggingface.co/ruisv/bcdl-pidnet) | [`pidnet`](models/pidnet/) | **non-commercial** |
+| [`ruisv/bcdl-yolop`](https://huggingface.co/ruisv/bcdl-yolop) | [`yolop`](models/yolop/) | **non-commercial** |
+
+BCDL's `scripts/fetch_models.sh` pulls these automatically.
+
+**The rows missing from that table are the point of the licence table above**:
+the Ultralytics builds are AGPL, the face models and PointPillars carry
+non-commercial *weights*, and NeuFlow v2, EdgeSAM and OSNet are unresolved. Those
+stay recipe-only — which is exactly what this repo is for.
 
 ## Layout
 
@@ -87,7 +113,7 @@ metric in `expected.json` too.
 ## Status
 
 Every converted model in BCDL's catalogue now has a recipe. **A recipe being
-present does not mean it has been re-run** — three are board-verified end to end
+present does not mean it has been re-run** — seven are board-verified end to end
 (`complete`), the rest reconstruct the method faithfully from the original
 conversion work (`recipe`). Each model's README states exactly how far it got, and
 `expected.json` distinguishes gates from measurements — where no board numbers
@@ -111,6 +137,8 @@ survived, the measured fields are `null` on purpose, never invented.
 | [`edgesam`](models/edgesam/) — promptable seg | recipe | encoder + two fixed-prompt decoders (sp1 / bp2). The multi-input decoder calibration feeds real encoder embeddings + sampled prompts. Upstream terms unreviewed — recipe only |
 | [`pointpillars`](models/pointpillars/) — lidar 3-D detection | complete | compiled from this recipe and **board-verified**. The published VFE spends 290 ms on a 95 MFLOP MLP — about 0.3 GFLOPS, i.e. **layout-bound, not compute-bound**: `(11546, 32, 4)` is a huge pillar axis against a 4-wide channel axis. Re-expressed as a 1×1 convolution over `(1, 10, P, 32)` it is **1.62 ms, a 179× difference for identical arithmetic**; with the backbone and cut head fused, BPU total goes 403.7 → **8.82 ms**. The published head bakes its anchor decode in with `ScatterND` and compiles clean into a model that never writes its outputs (the YOLOP failure again). **int8 beats int16 here**, which is not the usual direction. Also the clearest **calibration-size** measurement in this repo: a single-frame set costs 4 of 18 boxes and two π heading flips, and lowering the threshold does not recover them because the *ranking* degrades — eight sweeps fix it at identical latency. **KITTI weights — recipe only, no binary** |
 | [`lingbot_depth`](models/lingbot_depth/) — RGB-D depth refinement | complete | compiled and **board-verified** (C 0.989, absrel 2.92%, mask IoU 0.959). The upstream graph is not compilable as written — it drops depth tokens by validity, so the sequence length depends on the data; the rewrite is **bit-identical** to upstream with that masking off. int8 collapses the output's dynamic range (233% absrel) and the per-layer report **predicted it**. **DDR-bound at 1457 ms**, with a measured token-budget/accuracy curve for trading it down |
+| [`glass`](models/glass/) — industrial anomaly detection | complete | compiled and **board-verified** on MVTec-AD `bottle` with pixel ground truth: image and pixel AUROC both **0.9905, matching float — at an output cosine of 0.9409**. AUROC is rank-based, so quantisation noise that moves every score without reordering them costs nothing. Read against `neuflow` below, where 0.9954 hid an unusable model. Backbone is a **frozen** WideResNet-50 with two ~16 MB per-product heads, so "retrain for your part" is realistic. **MVTec AD is CC BY-NC-SA — redistributable, non-commercial, share-alike** |
+| [`neuflow`](models/neuflow/) — optical flow | complete | compiled and **board-verified** with ground truth *synthesised* (shift an image by a known number of pixels). int8 becomes a **flat ~1.9 px noise floor** — 2 px and 16 px displacements return the same error — while the compiler reports **0.9954**; int16 gets back to 0.055–0.081 px. Export needs three things copied from upstream's `infer.py` or the graph is silently wrong. **FlyingThings3D is research-only and says nothing about trained models — recipe only, no binary** |
 
 Every model here is one BCDL has a decoder for and has run on the board. Not in
 this repo, by design: the **download-only** entries in BCDL's catalogue (Depth-
@@ -121,17 +149,26 @@ mono3d), which would ship a recipe with no end-to-end path to validate it.
 
 ## Getting the compiled binaries
 
-**No compiled binaries are hosted here today** — every model in this repo is
-built from its recipe, and that is the only route currently offered. The rest of
-this section is the rule that would govern hosting if it is ever added.
+The compiled `.hbm` are hosted on Hugging Face — see
+[the table above](#prebuilt-hbm-on-hugging-face). They are **not** committed
+here; this repo stays the recipes.
 
-Only the first row of the licence table above —
-the models whose **weights**, not merely whose code, carry a licence that permits
-redistribution — is eligible to be hosted as a compiled binary. Everything else
-is **recipe-only** by design: build it yourself from weights you are licensed to
-use. Each model's `expected.json` records its licence finding, including which
-part of the chain (code, pretrained weights, or training data) the restriction
-comes from.
+The rule that governs what may be hosted, and it is stricter than the badge on
+an upstream repo:
+
+- **Redistributable, including commercially** — hosted.
+- **Redistributable but non-commercial** — hosted, with the restriction in a
+  banner at the top of the model card rather than a footnote. A restriction that
+  exists only in the weights' provenance is exactly the kind a reader misses.
+- **Copyleft weights, non-commercial weights we may not redistribute, or
+  unresolved** — **recipe only**. Build it yourself from weights you are
+  licensed to use.
+
+Each model's `expected.json` records the finding *and which link in the chain*
+it comes from — the code licence, the pretrained weights it was fine-tuned from,
+or the data it was trained on — plus the date it was reviewed. That last field
+matters: these are judgements about somebody else's terms at a point in time,
+not facts that stay true by themselves.
 
 ## Licence
 

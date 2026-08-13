@@ -1,0 +1,72 @@
+{
+  "model": "neuflow_v2_int16_nashm_512x384",
+  "upstream": "NeuFlow v2 (neufieldrobotics/NeuFlow_v2), neuflow_mixed.pth",
+  "input_shape": "1x3x384x512 x2 (img0, img1)",
+  "input_note": "BGR, 0-255, NOT normalised — the /255 is inside the graph, hence `no_preprocess` on both inputs. Two inputs means two positionally-matched calibration directories.",
+  "outputs": {
+    "flow": "1x2x384x512 dense displacement field, in MODEL pixels — the decoder rescales to source-image pixels",
+    "note": "Iteration counts are export-time constants (1 at 1/16 scale, 8 at 1/8), so the refinement loops are fully unrolled and the graph carries no control flow."
+  },
+  "quantisation": "set_all_nodes_int16, and this one is not a precaution — see rejected_builds. int8 compiles fine and is unusable.",
+  "march": "nash-m",
+  "licence": {
+    "tier": "UNRESOLVED — recipe only, do not redistribute the .hbm",
+    "detail": "The code is Apache-2.0 and, unusually, the pretrained weights are committed inside that same repository — which normally makes the root licence cover them. The data chain is what stops it. `neuflow_mixed.pth` is trained on FlyingThings3D and Sintel, and FlyingThings3D's terms of use read in full: 'This dataset is provided for research purposes only and without any warranty. Any commercial use is prohibited.' Those terms say nothing at all about models trained on the data — they neither extend the restriction to derivatives nor grant permission for them. Under this repo's own rule, silence is not permission, so this sits where OSNet sits: the recipe is public, the binary is not. Sintel is a second open question, reported as CC BY 3.0 by some sources and CC BY-NC-SA 3.0 by others. If you need a redistributable flow model, retrain the architecture on data you can account for — the recipe is the part that matters and it is here.",
+    "redistributable": false,
+    "commercial": false,
+    "reviewed": "2026-08-14"
+  },
+  "toolchain": {
+    "openexplorer": "3.7.0",
+    "hbdk": "4.7.5",
+    "board_system": "4.0.5",
+    "note": "The host HBDK and the board HBRT must match; 3.7.0 host pairs with 4.0.5 board."
+  },
+  "cosine": {
+    "A": 1.0,
+    "B": null,
+    "C": null,
+    "note": "A is ONNX against torch: cosine 1.000000 and EPE 0.0000 px after the Conv+BN fusion and init_bhwd. B and C are deliberately not the gate here — see task_metric. The compiler's own output cosine for the int8 build was 0.9954 and that build is unusable, which is the entire lesson of this recipe."
+  },
+  "task_metric": {
+    "name": "endpoint error against SYNTHESISED ground truth, plus a static-pair noise floor",
+    "protocol": "Optical flow is one of the few tasks where exact ground truth needs no dataset: translate an image by a known integer number of pixels and the correct field is that constant everywhere. Run known 2-16 px shifts (dropping a 48 px border so the wrap-around does not pollute the measurement) and take the median EPE. Separately, feed the SAME frame twice: whatever comes back is pure noise, so it measures the floor directly.",
+    "threshold": "median EPE within ~0.1 px of the float model across the shift range, and a static-pair floor below ~0.1 px",
+    "measured": "float ONNX: 0.025 px floor, 0.036-0.076 px EPE. int16: 0.070 px floor, 0.055-0.081 px EPE. int8: 1.936 px floor, 1.61-2.15 px EPE.",
+    "note": "On real frame pairs, the int8 build's cosine against float collapses to 0.02 where the true displacement is ~0.05 px. Fast pixels look fine at 12% relative error; slow ones are entirely noise."
+  },
+  "measured": {
+    "note": "S100P, hrt_model_exec perf, thread_num 1, min of 3 runs on a board gated against its own recorded numbers.",
+    "hbm_bytes": 46370816,
+    "latency_ms": 19.45,
+    "fps": 51,
+    "end_to_end_ms": 26.4,
+    "cosine_vs_fp32": null
+  },
+  "rejected_builds": [
+    {
+      "name": "int8 (compiler default)",
+      "why": "A FLAT ~1.9 px noise floor: a 2 px displacement and a 16 px displacement both come back with about the same error, so the relative error looks acceptable (12%) on fast pixels and the slow ones are pure noise. The compiler reported 0.9954 output cosine for it — a field with a 60 px dynamic range absorbs 2 px of noise without moving a cosine much. int16 costs 34% latency and recovers essentially float accuracy. THE RULE: a head that regresses a physical quantity must be scored in that quantity's units."
+    }
+  ],
+  "graph_rewrites": [
+    {
+      "op": "Conv + BatchNorm -> fused Conv",
+      "why": "The released checkpoints are not fused; upstream fuses at load time in infer.py. An export that skips it is not the network anybody measured.",
+      "verified": "ONNX vs torch cosine 1.000000, EPE 0.0000 px."
+    },
+    {
+      "op": "init_bhwd() called BEFORE tracing",
+      "why": "It precomputes the correlation lookup's linspace/meshgrid into constants for one fixed resolution. Without it those trace as live Range/Shape ops and the graph carries dynamic shapes.",
+      "verified": "After onnxslim: 890 nodes, opset 17, no Shape/Range/Sqrt remaining — fully static."
+    },
+    {
+      "op": "fp32 export (the demo runs half)",
+      "why": "Tracing the half-precision demo path exports a half graph the toolchain will not take."
+    }
+  ],
+  "board_verification": {
+    "note": "Compiled and board-verified: 19.45 ms BPU, 26.4 ms end to end, with the synthesised-shift EPE above. Two things worth repeating for the next model: do NOT time a loop that reads from a compressed .npz — the first attempt measured 87.5 ms end to end, of which 66 ms was re-decompressing the images each iteration; and of the 26.4 ms, 6.3 ms is preprocessing two frames with a hand-written bilinear resize, which OpenCV or NEON would cut.",
+    "not_done": "The `sintel` and `things` checkpoints were not tried (the shipped build uses `mixed`), and no resolution other than 512x384 was compiled — hbm size and latency scale with input AREA."
+  }
+}

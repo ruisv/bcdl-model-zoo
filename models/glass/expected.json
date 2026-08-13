@@ -1,0 +1,69 @@
+{
+  "model": "glass_bottle_int8_nashm_288x288",
+  "upstream": "GLASS (cqylunlun/GLASS, ECCV 2024), WideResNet-50 backbone, MVTec-AD `bottle`",
+  "input_shape": "1x3x288x288",
+  "input_note": "ImageNet-normalised RGB CHW — BGR to RGB, /255, then mean/std. The normalisation is on the host (BCDL's anomalyPreprocess), hence `no_preprocess`; the graph takes the already-normalised tensor.",
+  "outputs": {
+    "anomaly_map": "1x36x36 coarse anomaly map; the host upsamples to the input resolution and applies a Gaussian blur",
+    "note": "The IMAGE score is the map's MAXIMUM, not its mean. How bad a part is depends on its worst patch, and a mean lets a large clean area hide a small defect — which is the case the method exists to catch."
+  },
+  "quantisation": "compiler default (predominantly int8). Measured, not assumed — see cosine and task_metric.",
+  "march": "nash-m",
+  "licence": {
+    "tier": "B — redistributable, NON-COMMERCIAL (share-alike)",
+    "detail": "Code and released weights are MIT. The shipped checkpoint is trained on MVTec AD, which is CC BY-NC-SA 4.0: attribution, no commercial use, and derivatives under the same terms. Unlike a bare 'research only' notice, a Creative Commons licence has an explicit framework for adapted material, so a model trained on it may be redistributed under the same licence — the same reading applied to ViTPose (MAE, CC-BY-NC-4.0). Note the SHARE-ALIKE, which ViTPose does not carry: a redistributed .hbm should travel under CC BY-NC-SA 4.0. IMPORTANT AND EASY TO MISS: this restriction does NOT reach a real deployment. A deployed GLASS is retrained on the customer's own normal parts, so it derives from their data, not from MVTec's. What is encumbered is this example checkpoint, not the capability.",
+    "redistributable": "non-commercial",
+    "commercial": false,
+    "reviewed": "2026-08-14"
+  },
+  "toolchain": {
+    "openexplorer": "3.7.0",
+    "hbdk": "4.7.5",
+    "board_system": "4.0.5",
+    "note": "The host HBDK and the board HBRT must match; 3.7.0 host pairs with 4.0.5 board."
+  },
+  "cosine": {
+    "A": 1.0,
+    "B": 0.9409,
+    "C": null,
+    "note": "A is ONNX against torch: cosine 1.0. B is the int8 .hbm against the float ONNX — and 0.9409 is far below any usual gate while costing NOTHING on the task metric. AUROC is rank-based: quantisation noise moves every score slightly and does not reorder them. Read this next to the neuflow recipe, where 0.9954 hid an unusable model. Cosine is not a proxy for task quality in EITHER direction."
+  },
+  "task_metric": {
+    "name": "image-level and pixel-level AUROC on the product's own test set",
+    "protocol": "MVTec-AD `bottle` test split, 83 images with pixel-level ground-truth masks. Feed the board and the float ONNX the identical 288x288 BGR input; the board runs BCDL's own preprocessing.",
+    "threshold": "image and pixel AUROC within ~0.002 of the float model",
+    "measured": "float ONNX 0.9905 image / 0.9907 pixel; int8 .hbm 0.9905 / 0.9905; int16 0.9897 / 0.9905. Best F1 0.984, pixel IoU 0.668.",
+    "note": "The practical caveat the AUROC hides: good and defective scores OVERLAP (best normal 0.953 against worst defect 0.882). Zero misses costs ~50% false alarms; zero false alarms misses ~5%. The misses are all `contamination` — small foreign objects. THE THRESHOLD IS A LINE-SIDE DECISION, not a property of the model."
+  },
+  "measured": {
+    "note": "S100P, hrt_model_exec perf, thread_num 1, min of 3 runs on a board gated against its own recorded numbers.",
+    "hbm_bytes": 96599680,
+    "latency_ms": 72.6,
+    "fps": 14,
+    "end_to_end_ms": 81.0,
+    "cosine_vs_fp32": 0.9409
+  },
+  "rejected_builds": [
+    {
+      "name": "set_all_nodes_int16",
+      "why": "No accuracy to buy: 0.9897 image AUROC against int8's 0.9905, i.e. marginally worse on the metric that matters, at a larger model. A LATENCY comparison published earlier (\"91x slower\") was WRONG and is withdrawn — it was measured on a contaminated board where the same model varied 46x between back-to-back runs. Any int8/int16 latency ratio must be re-measured min-of-N on a quiet board."
+    }
+  ],
+  "graph_rewrites": [
+    {
+      "op": "torch.nn.Unfold (3x3 neighbourhood aggregation)",
+      "why": "The BPU does not support Unfold, so this was expected to need a rewrite.",
+      "verified": "It needed none: the torch exporter lowers it into standard operators. After onnxslim the graph is 136 nodes with NO red-flag operator — only Conv, Relu, Pool, Reshape, Transpose, Gemm, MatMul, Sigmoid."
+    },
+    {
+      "op": "batch and resolution fixed at 1 x 288 x 288",
+      "why": "Upstream's exporter defaults to a dynamic batch; the graph must be static.",
+      "verified": "ONNX vs torch cosine 1.0."
+    }
+  ],
+  "board_verification": {
+    "note": "Compiled and board-verified against the official MVTec-AD `bottle` test set with pixel-level ground truth (see task_metric). 72.6 ms BPU of an 81.0 ms end-to-end; preprocessing is 1.6 ms and decode 6.8 ms, of which 6.3 ms is the Gaussian blur (`blur_kernel=0` skips it but then diverges from the reference post-processing).",
+    "to_go_faster": "Change the backbone. 72.6 ms is a WideResNet-50 at 288x288 and that is the whole cost. Lean GLASS (MobileNetV2 backbone) is the ready-made next step.",
+    "not_done": "Only `bottle` was trained and converted. Every other MVTec category is a separate checkpoint through the same recipe."
+  }
+}
