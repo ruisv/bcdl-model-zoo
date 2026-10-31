@@ -100,9 +100,18 @@ un-normalised calibration data compiles perfectly and decodes to garbage.
   read as a sample; a stray metadata file fails with *"cannot reshape array of
   size 196 into shape (1,3,480,640)"*. `calib_pack.py` writes its manifest
   beside the directory rather than inside it.
-- **Domain match beats sample count.** 20-100 samples is plenty. Data from the
-  actual deployment domain wins: on LAS2, 5 same-domain stereo pairs gave EPE
-  0.12px and adding 54 out-of-domain pairs made it *worse* (0.26px).
+- **hb_compile reads one sample in eight.** With every input at batch 1, it
+  calibrates in batches of 8 and its max statistic takes only the first sample
+  of each batch — samples at sorted positions 0, 8, 16, ... set the thresholds
+  and the rest are ignored. On LAS2 this capped the disparity at 47.7 px with a
+  calibration set spanning 0–188 px. `calib_pack.py` therefore writes every
+  sample 8 times (hard links); if you write calibration data any other way, do
+  the same. Only the `max` method has been verified; assume the others too.
+- **Domain match beats sample count.** 20-100 samples is plenty, and data from
+  the actual deployment domain is what you want. The LAS2 measurement that used
+  to be quoted here (5 same-domain pairs 0.12 px, adding 54 out-of-domain pairs
+  0.26 px) ran under the one-in-eight bug above — the first set was effectively
+  one pair and the second eight — so treat it as anecdote, not evidence.
 - **Preprocess exactly as you deploy — and confirm what "deploy" actually does.**
   Same letterboxing, same resolution, same channel order. On a stereo model,
   calibrating with a resize and deploying with a crop changes the disparity range

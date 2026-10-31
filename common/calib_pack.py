@@ -38,6 +38,16 @@ Two ways to use it:
       pack(cfg.inputs[0], left_arrays)     # CHW float32, 0-255 for images
       pack(cfg.inputs[1], right_arrays)
 
+Every sample is written CALIB_REPEAT (8) times in a row. hb_compile (OE 3.7.0)
+calibrates in batches of 8 whenever every input has batch dimension 1, and its
+max statistic only takes the FIRST sample of each batch: with N samples, only
+those at sorted positions 0, 8, 16, ... set the thresholds. Measured on LAS2:
+16 calibration pairs gave an output threshold of 43.6 px — the max of pairs 0
+and 8 — although the set spans 0..188 px, and every subset calibrated on its
+own came out right. Writing each sample 8 times makes each one the head of its
+own batch, which recovers the full-set max (181 px). The copies are hard links,
+so the cost is calibration time, not disk.
+
 hb_compile takes multi-input models as `;`-separated lists in every one of
 input_name / input_type_train / norm_type / cal_data_dir, and those lists must
 line up positionally. Mismatched lengths are rejected here rather than at
@@ -219,19 +229,32 @@ def load_config(path: str) -> CalibConfig:
     return CalibConfig(inputs=specs, path=path)
 
 
+# See the module docstring: hb_compile's batch-8 calibration only reads the
+# first sample of each batch, so each sample is written this many times.
+CALIB_REPEAT = 8
+
+
 def pack(spec: InputSpec, arrays: Iterable[np.ndarray], out_dir: str = None,
-         fmt: str = None, sources: list = None) -> str:
+         fmt: str = None, sources: list = None, repeat: int = CALIB_REPEAT) -> str:
     """Normalise and write one input's calibration set.
 
     `arrays` yields CHW float32 — 0-255 for image inputs, whatever the model
     expects for featuremap inputs. Normalisation comes from `spec` (i.e. from
     config.yaml) and cannot be overridden here; that is the point of the module.
+
+    Each sample is written `repeat` times (hard links) as NNNN_K.<fmt>, so the
+    sorted order keeps the copies of one sample together.
     """
     out_dir = out_dir or spec.cal_dir
     if not out_dir:
         raise SystemExit(f"{spec.name}: no cal_data_dir in config and no out_dir given")
     fmt = fmt or spec.fmt
     os.makedirs(out_dir, exist_ok=True)
+    # Every file in cal_data_dir is a sample to hb_compile, so samples left over
+    # from a previous run (or a previous naming scheme) would silently join this
+    # set. Clear the sample files — and only those.
+    for old in glob.glob(os.path.join(out_dir, "*.npy")) + glob.glob(os.path.join(out_dir, "*.bin")):
+        os.remove(old)
 
     count = 0
     lo = hi = None
@@ -254,10 +277,18 @@ def pack(spec: InputSpec, arrays: Iterable[np.ndarray], out_dir: str = None,
         else:
             raise SystemExit(f"unsupported cal_data_type {spec.dtype!r}")
 
+        first = os.path.join(out_dir, f"{i:04d}_0.{fmt}")
         if fmt == "npy":
-            np.save(os.path.join(out_dir, f"{i:03d}.npy"), out[None])
+            np.save(first, out[None])
         else:
-            out.tofile(os.path.join(out_dir, f"{i:03d}.bin"))
+            out.tofile(first)
+        for k in range(1, max(1, repeat)):
+            dup = os.path.join(out_dir, f"{i:04d}_{k}.{fmt}")
+            try:
+                os.link(first, dup)
+            except OSError:
+                import shutil
+                shutil.copyfile(first, dup)
 
         lo = out.min() if lo is None else min(lo, out.min())
         hi = out.max() if hi is None else max(hi, out.max())
@@ -277,6 +308,7 @@ def pack(spec: InputSpec, arrays: Iterable[np.ndarray], out_dir: str = None,
         "dtype": spec.dtype,
         "format": fmt,
         "count": count,
+        "repeat": max(1, repeat),
         "value_range": [float(lo), float(hi)],
         "sources": sources or [],
     }
@@ -288,7 +320,7 @@ def pack(spec: InputSpec, arrays: Iterable[np.ndarray], out_dir: str = None,
     with open(manifest_path, "w") as f:
         json.dump(manifest, f, indent=2)
 
-    print(f"  {spec.name}: {count} x {fmt}  norm={spec.norm_type}  "
+    print(f"  {spec.name}: {count} x {fmt} (each x{max(1, repeat)})  norm={spec.norm_type}  "
           f"range [{lo:.4f}, {hi:.4f}]  -> {out_dir}")
     if spec.norm_type not in (None, "", "no_preprocess") and hi > 64:
         print(f"  WARNING: {spec.name} looks un-normalised despite norm_type="

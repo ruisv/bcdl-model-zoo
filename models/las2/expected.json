@@ -1,5 +1,68 @@
 {
-  "model": "las2_m_crop_nashm",
+  "model": "las2_m_crop2_nashm",
+  "builds": {
+    "note": "Measured 2026-10-31 on S100P (HBRT 4.7.5). EPE/bad-N against ground truth on held-out ETH3D + Middlebury 2021 scenes (crop 33, resize 51, disparity 0<gt<192); quant_epe is against the build's own float model. Latency is hrt_model_exec perf, 1 thread, 200 frames.",
+    "las2_m_crop2_nashm": {
+      "config": "config.yaml",
+      "calibration": "36 pairs x8",
+      "threshold_output": 182.9,
+      "epe_px": 0.998,
+      "bad1": 14.21,
+      "bad2": 5.99,
+      "quant_epe_px": 0.299,
+      "latency_ms": 13.85,
+      "fps": 72,
+      "hbm_bytes": 40155088
+    },
+    "las2_l_crop2_nashm": {
+      "config": "config_l.yaml",
+      "calibration": "36 pairs x8",
+      "threshold_output": 187.1,
+      "epe_px": 0.928,
+      "bad1": 11.02,
+      "bad2": 4.98,
+      "quant_epe_px": 0.298,
+      "latency_ms": 22.9,
+      "fps": 44,
+      "hbm_bytes": 71139280
+    },
+    "las2_m_resize2_nashm": {
+      "config": "config_resize.yaml",
+      "calibration": "16 pairs x8",
+      "threshold_output": 181.2,
+      "epe_px": 0.597,
+      "bad1": 8.52,
+      "bad2": 3.35,
+      "quant_epe_px": 0.305,
+      "latency_ms": 13.87,
+      "fps": 72,
+      "hbm_bytes": 40680304
+    },
+    "las2_l_resize2_nashm": {
+      "config": "config_l_resize.yaml",
+      "calibration": "16 pairs x8",
+      "threshold_output": 180.5,
+      "epe_px": 0.568,
+      "bad1": 6.65,
+      "bad2": 2.89,
+      "quant_epe_px": 0.317,
+      "latency_ms": 22.93,
+      "fps": 44,
+      "hbm_bytes": 70879600
+    }
+  },
+  "retired_builds": [
+    {
+      "name": "las2_m_crop_nashm",
+      "threshold_output": 131.0,
+      "why": "calibration set had no near field; output clipped at 131 px"
+    },
+    {
+      "name": "las2_m_int16_nashm",
+      "threshold_output": 47.7,
+      "why": "resize calibration had no near field; output clipped at 47.7 px. Held-out (51) EPE 2.17 px vs 0.60 for the resize2 build"
+    }
+  ],
   "upstream": "LiteAnyStereo (LAS2-M)",
   "input_shape": "1x3x480x640",
   "quantisation": "int16",
@@ -23,7 +86,7 @@
     "C": 0.99
   },
   "measured": {
-    "note": "Measured on S100P with the SHIPPED crop build, not the rebuild below. Latency is from hrt_model_exec perf on a quiet board -- a board with a crashed process leaking VPU/BPU resources reports substantially worse until reboot.",
+    "note": "Historical: measured on the RETIRED las2_m_crop_nashm build. The EPE here is against the float model on a pair inside the calibration set and flatters the build; see builds above and README trap 4. Measured on S100P with the SHIPPED crop build, not the rebuild below. Latency is from hrt_model_exec perf on a quiet board -- a board with a crashed process leaking VPU/BPU resources reports substantially worse until reboot.",
     "cosine_vs_fp32": 0.99986,
     "epe_px": 0.12,
     "outliers_gt_3px": 0.0,
