@@ -20,8 +20,8 @@ the same resolution.
 RULE 2 — domain match beats sample count. Images from the actual camera win;
   do not pad the set with out-of-domain public data. (The figures once quoted
   for this — 5 ZED pairs 0.12px vs +54 Middlebury pairs 0.26px — were measured
-  before the toolchain was found to read only one sample in eight, see
-  common/calib_pack.py, so they compared one pair against eight.)
+  while this graph's output nodes saw only one sample in eight, see
+  common/calib_pack.py, so they compared one pair against eight there.)
 
 RULE 3 — the calibration set must span the disparity range you deploy into.
   The int16 threshold on the output is set by the largest disparity the pairs
@@ -58,7 +58,7 @@ import cv2
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 "..", "..", "common"))
-from calib_pack import load_config, pack  # noqa: E402
+from calib_pack import CALIB_REPEAT, load_config, pack  # noqa: E402
 
 
 def fit(img_rgb, hw, mode):
@@ -228,8 +228,11 @@ def main():
 
     print(f"[calib] {len(lefts)} pairs ({len(pairs)} source), mode={a.mode}, "
           f"{a.hw[0]}x{a.hw[1]}")
-    pack(left_spec, lefts, fmt="npy", sources=srcs)
-    pack(right_spec, rights, fmt="npy", sources=srcs)
+    # LAS2 runs at batch 8 but its output Resize keeps only the first sample of
+    # each batch once the compiler folds its size; repeating each pair makes
+    # every batch one pair (common/calib_pack.py, README trap 4).
+    pack(left_spec, lefts, fmt="npy", sources=srcs, repeat=CALIB_REPEAT)
+    pack(right_spec, rights, fmt="npy", sources=srcs, repeat=CALIB_REPEAT)
 
     if a.golden:
         gl, gr = (split_sbs(a.golden_sbs) if a.golden_sbs

@@ -102,13 +102,20 @@ on top (the shipped builds used six from MiddEval3, which is disjoint from the
 evaluation sets). After the fix the worst crop scene is 0.30–0.43 px; scenes
 that were inside the old range pay about 0.07 px for the wider one.
 
-Range in the data is not enough on its own, because the toolchain reads only
-one calibration sample in eight (see `common/calib_pack.py`). The first resize
-rebuild had full-range data and still clipped at 47.7 px: of its 16 pairs, only
-pairs 0 and 8 — both originals, no near field — set the thresholds. The crop
+Range in the data is not enough on its own on this model. hb_compile
+calibrates in batches of 8, and while optimising the graph it constant-folds
+the output size of the final disparity Resize to `[1, 9, 480, 640]` — batch 1.
+At batch 8 that Resize keeps only the first sample of each batch, so the three
+nodes from there to the output (and only those: the other ~990 see every
+sample) are calibrated on one pair in eight. The first resize rebuild had
+full-range data and still clipped at 47.7 px: of its 16 pairs, only pairs 0
+and 8 — both originals, no near field — set the output threshold. The crop
 rebuild only escaped because pair 32 happened to be a large-disparity one.
-`calib_pack.py` now writes every pair eight times, and the configs use plain
+`calib.py` therefore writes every pair eight times in a row
+(`repeat=CALIB_REPEAT`), so each batch is one pair, and the configs use plain
 `max` calibration (`max_percentile: 1.0`), which int16 has the resolution for.
+Most other recipes are unaffected — their graphs fail at batch 8 and the
+toolchain falls back to batch 1 — see `CONVERSION.md`.
 
 Why nothing caught it: BCDL's own stereo pair spans 44–129 px — two pixels
 under the crop cap. Its test now shifts that pair up to ~175 px and checks the
@@ -190,7 +197,7 @@ Rebuilt with `--extend-range`, the MiddEval3 pool, 8× repetition and plain
 The retired builds had 131 (crop) and 47.7 (resize) on the output. Against
 the retired resize build on the same 51 held-out scenes, EPE went 2.17 → 0.60
 px and Middlebury bad-3px 17.3% → 3.6%. The crop rebuild with 8× repetition
-matched the one without to 0.01 px — it had escaped the one-in-eight problem
+matched the one without to 0.01 px — it had escaped the folded-Resize problem
 by luck (trap 4).
 
 These still start from the uncommitted capture set below, so they are not

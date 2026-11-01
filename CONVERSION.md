@@ -100,18 +100,24 @@ un-normalised calibration data compiles perfectly and decodes to garbage.
   read as a sample; a stray metadata file fails with *"cannot reshape array of
   size 196 into shape (1,3,480,640)"*. `calib_pack.py` writes its manifest
   beside the directory rather than inside it.
-- **hb_compile reads one sample in eight.** With every input at batch 1, it
-  calibrates in batches of 8 and its max statistic takes only the first sample
-  of each batch — samples at sorted positions 0, 8, 16, ... set the thresholds
-  and the rest are ignored. On LAS2 this capped the disparity at 47.7 px with a
-  calibration set spanning 0–188 px. `calib_pack.py` therefore writes every
-  sample 8 times (hard links); if you write calibration data any other way, do
-  the same. Only the `max` method has been verified; assume the others too.
+- **Batch-8 calibration can drop samples — check, don't assume.** With every
+  input at batch 1, hb_compile calibrates in batches of 8. If the optimised
+  graph cannot run at batch 8 the log says *"Reset batch_size=1 and execute
+  forward again"* and every sample counts; most models take that path. The trap
+  is a graph that runs at batch 8 but mixes the batch after constant folding:
+  on LAS2 the optimiser froze a Resize's output size at batch 1, so the nodes
+  after it saw only the first sample of each batch and the disparity output
+  capped at 47.7 px on a set spanning 0–188 px. The check: run the
+  `*_optimized_float_model.onnx` on two different samples as one batch (with
+  the toolchain's own executor, since it has custom ops) and compare against
+  running them one at a time. Only if that fails, write each sample 8 times in
+  a row (`pack(..., repeat=CALIB_REPEAT)`). Not by default: duplicates do not
+  move max or percentile thresholds, but they move kl ones.
 - **Domain match beats sample count.** 20-100 samples is plenty, and data from
   the actual deployment domain is what you want. The LAS2 measurement that used
   to be quoted here (5 same-domain pairs 0.12 px, adding 54 out-of-domain pairs
-  0.26 px) ran under the one-in-eight bug above — the first set was effectively
-  one pair and the second eight — so treat it as anecdote, not evidence.
+  0.26 px) was taken while that graph's output nodes saw one sample in eight,
+  so treat it as anecdote, not evidence.
 - **Preprocess exactly as you deploy — and confirm what "deploy" actually does.**
   Same letterboxing, same resolution, same channel order. On a stereo model,
   calibrating with a resize and deploying with a crop changes the disparity range

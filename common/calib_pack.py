@@ -38,15 +38,22 @@ Two ways to use it:
       pack(cfg.inputs[0], left_arrays)     # CHW float32, 0-255 for images
       pack(cfg.inputs[1], right_arrays)
 
-Every sample is written CALIB_REPEAT (8) times in a row. hb_compile (OE 3.7.0)
-calibrates in batches of 8 whenever every input has batch dimension 1, and its
-max statistic only takes the FIRST sample of each batch: with N samples, only
-those at sorted positions 0, 8, 16, ... set the thresholds. Measured on LAS2:
-16 calibration pairs gave an output threshold of 43.6 px — the max of pairs 0
-and 8 — although the set spans 0..188 px, and every subset calibrated on its
-own came out right. Writing each sample 8 times makes each one the head of its
-own batch, which recovers the full-set max (181 px). The copies are hard links,
-so the cost is calibration time, not disk.
+`repeat` exists for one failure, and is off by default. hb_compile (OE 3.7.0)
+calibrates in batches of 8 whenever every input has batch dimension 1. If the
+optimised graph cannot run at batch 8 it says "Reset batch_size=1 and execute
+forward again" and every sample counts — most models here take that path. The
+trap is a graph that does run at batch 8 but is not batch-transparent after the
+compiler's constant folding: on LAS2 the optimiser froze a Resize's output size
+at [1, 9, 480, 640], so at batch 8 that Resize kept only the first sample of
+each batch, and the three nodes after it (the disparity output among them) were
+calibrated on one sample in eight. Writing each sample 8 times in a row makes
+every batch eight copies of one sample, which is correct whatever the graph
+does to the batch. The copies are hard links, so the cost is calibration time.
+
+Do not turn it on by default: max and percentile statistics are unchanged by
+duplicates, but kl is not — duplicated data moved about half of a kl-calibrated
+model's thresholds by 0.7-1.6x in a test, so a recipe that did not need it would
+stop reproducing its own build.
 
 hb_compile takes multi-input models as `;`-separated lists in every one of
 input_name / input_type_train / norm_type / cal_data_dir, and those lists must
@@ -229,13 +236,13 @@ def load_config(path: str) -> CalibConfig:
     return CalibConfig(inputs=specs, path=path)
 
 
-# See the module docstring: hb_compile's batch-8 calibration only reads the
-# first sample of each batch, so each sample is written this many times.
+# Copies per sample when a recipe needs them; see the module docstring. Only
+# recipes whose optimised graph mixes samples at batch 8 pass repeat=CALIB_REPEAT.
 CALIB_REPEAT = 8
 
 
 def pack(spec: InputSpec, arrays: Iterable[np.ndarray], out_dir: str = None,
-         fmt: str = None, sources: list = None, repeat: int = CALIB_REPEAT) -> str:
+         fmt: str = None, sources: list = None, repeat: int = 1) -> str:
     """Normalise and write one input's calibration set.
 
     `arrays` yields CHW float32 — 0-255 for image inputs, whatever the model
@@ -243,7 +250,8 @@ def pack(spec: InputSpec, arrays: Iterable[np.ndarray], out_dir: str = None,
     config.yaml) and cannot be overridden here; that is the point of the module.
 
     Each sample is written `repeat` times (hard links) as NNNN_K.<fmt>, so the
-    sorted order keeps the copies of one sample together.
+    sorted order keeps the copies of one sample together. Leave it at 1 unless
+    the model mixes samples at batch 8 (module docstring).
     """
     out_dir = out_dir or spec.cal_dir
     if not out_dir:
