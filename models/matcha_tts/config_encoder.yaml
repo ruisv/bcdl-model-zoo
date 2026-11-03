@@ -1,0 +1,31 @@
+# Matcha-TTS zh-en text encoder + duration predictor, 128 tokens, ALL-INT16.
+#
+# Takes the token EMBEDDINGS, not token ids: the lookup runs on the CPU from
+# matcha_zh_en_embedding.npy. An id fed as a float input is quantised like any
+# activation (the compiler chose a threshold of 127 for a 2190-entry
+# vocabulary) and logw came out at cosine 0.83. See README.md.
+#
+# int16, measured: int8 raised the round-trip CER from 1.73% to 2.85%, every
+# extra error a swallowed or doubled character — durations are ceil(exp(logw)),
+# so a small logw error moves a whole frame. It saves 0.38 ms.
+#
+# Both inputs are `featuremap` with `no_preprocess`: the arrays are exactly
+# what the board feeds. cal_data_type is per-input and accepts float32 or uint8.
+model_parameters:
+  onnx_model: "matcha_enc_L128_slim.onnx"
+  march: "nash-m"
+  working_dir: "./out_encoder"
+  output_model_file_prefix: "matcha_zh_en_enc_l128_int16_nashm"
+input_parameters:
+  input_name: "x_emb;x_mask"
+  input_type_rt: "featuremap;featuremap"
+  input_type_train: "featuremap;featuremap"
+  norm_type: "no_preprocess;no_preprocess"
+calibration_parameters:
+  cal_data_dir: "/ws/cal/encoder/x_emb;/ws/cal/encoder/x_mask"
+  cal_data_type: "float32;float32"
+  calibration_type: "default"
+  optimization: "set_all_nodes_int16"
+compiler_parameters:
+  optimize_level: "O2"
+  compile_mode: "latency"

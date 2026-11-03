@@ -1,0 +1,109 @@
+{
+  "model": "vocos_16k_t256_int16_nashm",
+  "upstream": "Vocos 16 kHz, vocos-16khz-univ.onnx as published with Matcha-TTS zh-en (ModelScope dengcunqin/matcha_tts_zh_en_20251010; mirrored in the sherpa-onnx vocoder-models release), md5 2b43a6235c158cb70480334c48c1c8b9",
+  "input_shape": "1x80x256 (mels)",
+  "input_note": "Natural-log mel spectrogram exactly as Matcha-TTS zh-en emits it, 80 bins x 256 frames (4.1 s at hop 256 / 16 kHz). `featuremap` + `no_preprocess`: the values go in as they are. Longer input is chunked by the runtime: 256-frame windows overlapping 32 frames per side, frames past either end of the utterance filled with -16.",
+  "outputs": {
+    "log_mag": "1x513x256, the head's log-magnitude before exp",
+    "phase": "1x513x256, the head's raw phase (spans about +/-42 rad) before cos/sin",
+    "note": "The published graph's tail — clip(exp(log_mag), max=100), cos(phase), sin(phase) — is removed by export.py and runs on the CPU, followed by a centred periodic-Hann iSTFT, n_fft 1024, hop 256. Keep the middle 192 frames of each window."
+  },
+  "quantisation": "set_all_nodes_int16. Measured, not cautious — int8 and a tail-only int16 mix are both in rejected_builds.",
+  "march": "nash-m",
+  "licence": {
+    "tier": "A — redistributable, one thing to check first",
+    "detail": "The vocos-16khz-univ model card (published with Matcha-TTS zh-en by the same author) declares Apache-2.0, and the Vocos architecture and code are MIT. Both allow redistribution, including commercially. The thing to check is the training data, which is undisclosed — for this vocoder and for the Matcha acoustic model it is paired with, whose card says only 'mixed Chinese-English data'. That is a gap, not a known restriction; look at it before a commercial build.",
+    "redistributable": true,
+    "commercial": "check",
+    "reviewed": "2026-11-03"
+  },
+  "toolchain": {
+    "openexplorer": "3.7.0",
+    "hbdk": "4.7.5",
+    "board_system": "4.0.5",
+    "note": "The host HBDK and the board HBRT must match; 3.7.0 host pairs with 4.0.5 board."
+  },
+  "cosine": {
+    "A": 0.99953,
+    "B": null,
+    "C": null,
+    "compiler_table": {
+      "log_mag": 0.999991,
+      "phase": 0.99985
+    },
+    "compiler_table_shipped": {
+      "log_mag": 0.99999,
+      "phase": 0.99989
+    },
+    "note": "compiler_table is hb_compile's closing quantised-cosine table for this recipe's rebuild; compiler_table_shipped is the same table from the shipped build's log. A is the worst per-sentence cosine (phase; log_mag's worst is 0.999956) of the rebuild's quantised .bc against the float cut graph, run on the host over every runtime window of 94 held-out sentences (not the calibration texts) and de-chunked as the board does; the shipped .bc scores 0.99931 on the same check. B and C were not re-run for the rebuild — it was not taken to the board. Cosine is not the gate here: see task_metric."
+  },
+  "task_metric": {
+    "name": "audible-cell log-spectral distance against the float model",
+    "protocol": "Synthesise held-out sentences through the float model and through the build, both chunked as on the board, then STFT both waveforms (n_fft 1024, hop 256). Keep the time-frequency cells within 40 dB of each utterance's peak in the float reference — the ones you can hear — and report the RMS dB difference over them (log-spectral distance) and the share of them more than 3 dB off.",
+    "threshold": "log-spectral distance below ~1 dB and fewer than ~1% of audible cells more than 3 dB off",
+    "measured": "shipped int16 on 60 sentences: 0.54 dB, 0.3-0.4% of cells > 3 dB. Float chunked vs float whole-sentence: 0.01 dB, 0.0%.",
+    "note": "Round-trip CER through a recogniser (FireRedASR2) is NOT the gate for a vocoder: int8 scores 2.10% against int16's 2.48% and float's 1.98% while half its audible cells are more than 3 dB off. CER does not see a noise floor."
+  },
+  "measured": {
+    "note": "S100P, BCDL VocosVocoder, per 3 s of audio (one 192-frame body).",
+    "hbm_bytes": 17390464,
+    "latency_ms": 1.3,
+    "end_to_end_ms_per_3s_audio": 7.9,
+    "breakdown_ms": {
+      "bpu": 1.3,
+      "exp_cos_sin_cpu": 2.5,
+      "istft_cpu": 4.1
+    },
+    "real_time_factor": 0.0026
+  },
+  "rejected_builds": [
+    {
+      "name": "published graph, cos/sin on the BPU",
+      "why": "The compiler lowers cos/sin to a quantised range reduction over a raw phase spanning about +/-42 rad. Phase cosine against float: 0.58 at int8, 0.97-0.99 at int16 — audible either way. Fixed by cutting the graph at the head (export.py), not by bit width."
+    },
+    {
+      "name": "int8 (cut graph)",
+      "why": "Audible-cell spectral distance 5.38 dB, 49.8-50.3% of cells more than 3 dB off: a noise floor under every word. Still intelligible (round-trip CER ~2%), which is why CER is not the gate. BPU 0.76 ms per window against int16's 1.30, out of ~7.9 ms per 3 s of audio that is mostly CPU; hbm 15.8 MB against 17.4 MB."
+    },
+    {
+      "name": "mixed: int16 on the last ConvNeXt block + final LayerNorm + head, int8 elsewhere",
+      "why": "4.54 dB, 40.5% of cells > 3 dB — barely better than int8. The error accumulates over all eight blocks rather than concentrating in the tail, so there is no small set of layers to promote. BPU 0.81 ms per window."
+    }
+  ],
+  "graph_rewrites": [
+    {
+      "op": "dynamic [N, 80, time] -> static [1, 80, 256]; outputs [1, 513, 256]",
+      "why": "The BPU needs static shapes; 256 frames is the runtime's window."
+    },
+    {
+      "op": "onnxslim",
+      "why": "Folds the Shape -> Gather that computed the head's split point; 1x1 MatMuls become Gemm. 220 nodes after the cut, opset 14, IR 7, no Shape left."
+    },
+    {
+      "op": "remove Exp, Clip(max=100), Cos, Sin; outputs renamed log_mag, phase",
+      "why": "See rejected_builds[0].",
+      "verified": "Cut graph + CPU exp/clip/cos/sin vs published graph on the same 256-frame windows, 94 held-out sentences: max|diff| 4e-4 on magnitudes up to 100, 2e-4 on cos/sin (float round-off). Chunked vs whole-utterance published graph: same max|diff| on interior frames, audio SNR 107.6 dB min away from the ends, 46.1 dB min / 56.1 dB median over whole utterances (the -16 edge padding)."
+    }
+  ],
+  "rebuild": {
+    "note": "This recipe re-run end to end (export.py -> calib.py -> compile.sh) on 2026-11-04 with OE 3.7.0 on an RTX 4090, in a fresh directory. export.py's head graph is numerically identical to the one the shipped .hbm was compiled from (max|diff| 0 on every window of 94 held-out sentences). The calibration set is a seeded redraw of the same 40 texts — same 61 sentences, same frame counts, same 65 windows, mels differing only by Matcha's decoder noise — so the .hbm is not byte-identical to the shipped one. hb_compile fell back to batch 1 for calibration ('Reset batch_size=1'), so every window counted. The rebuild was not run on the board.",
+    "hbm_bytes": 17636224,
+    "shipped_hbm_bytes": 17390464,
+    "hbdk_latency_estimate_ms": {
+      "rebuild": 1.02,
+      "shipped": 1.02
+    },
+    "calibration_windows": 65,
+    "compile_minutes": 10,
+    "task_metric_host_bc": {
+      "protocol": "task_metric's audible-cell distance, with the quantised .bc run on the host in place of the board .hbm, 94 held-out sentences scored per sentence against the float cut graph chunked identically",
+      "rebuild": "0.53 dB, 0.35% of cells > 3 dB",
+      "shipped": "0.54 dB, 0.37% of cells > 3 dB"
+    }
+  },
+  "board_verification": {
+    "note": "The shipped build is integrated in BCDL (VocosVocoder, and TextToSpeech with Matcha-TTS zh-en) and board-verified: chunk seams bit-identical to a whole-utterance pass, the audible-cell numbers above, and full-chain TTS round-trip CER 1.73% on 60 sentences against 1.61% for float sherpa-onnx.",
+    "not_done": "No window length other than 256 frames compiled. The 22 kHz / 24 kHz Vocos checkpoints were not tried."
+  },
+  "status": "complete"
+}

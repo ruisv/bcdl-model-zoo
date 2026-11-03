@@ -1,0 +1,117 @@
+{
+  "model": "kws_zipformer_zh_en_3m_c16_int16_nashm",
+  "upstream": "sherpa-onnx KWS zipformer2 zh-en 3M (k2-fsa), release archive sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20.tar.bz2 (GitHub release tag kws-models), encoder/decoder/joiner-epoch-13-avg-2-chunk-8-left-64.onnx",
+  "artefacts": {
+    "kws_zipformer_zh_en_3m_c16_int16_nashm.hbm": "the streaming encoder (BPU)",
+    "kws_zipformer_zh_en_3m_decoder_joiner.npy": "decoder + joiner weights, float32 [2V+2D, D+1] = [1166, 321], V = 263, D = 320; row layout in export.py decoder_joiner_table (CPU)",
+    "kws_zipformer_zh_en_3m_tokens.txt": "the archive's tokens.txt unchanged, 263 tokens"
+  },
+  "input_shape": "39 inputs: x 1x29x80, pad_mask 1x72, 37 caches (cached_key/nonlin_attn/val1/val2/conv1/conv2 x 6 stacks, embed_states 1x128x3x19)",
+  "input_note": "All featuremap / no_preprocess. x = 80-bin kaldi fbank (samples in [-1, 1], Povey window, low_freq 20, high_freq -400, dither 0, snip_edges=false), 29 frames per call advancing by 16 (160 ms). pad_mask = [1]*(64-q) + [0]*(q+8), q = min(processed, 64), processed += 8 per call (the EMBEDDING rate, not the 4 encoder frames out). Caches start at zero and are fed back from the matching new_<name> output.",
+  "outputs": {
+    "encoder_out": "1x4x320, four 40 ms frames already in the joiner's space (encoder_proj is inside the graph)",
+    "new_*": "37 caches for the next call"
+  },
+  "quantisation": "set_all_nodes_int16. int8 was not built.",
+  "march": "nash-m",
+  "licence": {
+    "tier": "UNRESOLVED — recipe only, do not redistribute the .hbm yet",
+    "detail": "sherpa-onnx (code, export scripts, the keyword search this build reproduces) is Apache-2.0. The model is published by the k2-fsa project as a GitHub release asset (tag kws-models) with no model-specific licence, and the release does not say what the zh-en model was trained on. Its Chinese-only sibling is trained on WenetSpeech; whether that, or which English corpus, is in the zh-en model is not stated. Silence is not permission: the recipe is public, the binary is not. The same rewrites should carry over to a zipformer2 streaming KWS model trained on data you can account for, though only this one has been run.",
+    "link_in_chain": "weights (no licence attached to the release asset) and training data (undisclosed)",
+    "redistributable": false,
+    "commercial": null,
+    "reviewed": "2026-11-03"
+  },
+  "toolchain": {
+    "openexplorer": "3.7.0",
+    "hbdk": "4.7.5",
+    "hmct": "2.6.5",
+    "board_system": "4.0.5",
+    "note": "Compiled through hbc.py: plain hb_compile segfaults (container exit 139) right after 'Start to optimize the onnx model.' because one hmct optimiser check builds an onnxruntime session that crashes on this graph."
+  },
+  "cosine": {
+    "A": 0.958986,
+    "B": null,
+    "C": {
+      "per_frame_mean": 0.995,
+      "per_frame_min": 0.973,
+      "whole_array": 0.915,
+      "on": "one AISHELL-1 utterance, BCDL on the board, shipped build"
+    },
+    "note": "Below the repo's usual 0.99 gate, and not a failure. A is the compiler's own encoder_out cosine for the shipped build (quantized model vs float, on the calibration set; 0.948916 for the rebuild). C is the on-board encoder_out against float on one AISHELL-1 utterance: per 40 ms frame 0.995 mean, 0.973 worst; over the whole array 0.915, because some frames come out smaller rather than turned, which the joiner's tanh and the softmax do not notice. B (board .hbm vs host .bc) was not recorded. The gate for this model is task_metric."
+  },
+  "task_metric": {
+    "name": "wake-word recall, false wake-ups, confusable phrases that fire",
+    "protocol": "Wake words 你好小车 and 小车小车: 202 clips each clean and with MUSAN noise mixed in, 9 synthetic voices. False wake-ups on AISHELL-1 speech, spoken commands and 2.3 h of noisy sessions. 350 confusable phrases (你好小菜, 校车校车, ...). Default threshold 0.25, boost 1.0, 1 trailing blank, 4 active paths. Float = sherpa-onnx KeywordSpotter on the upstream ONNX; int16 = BCDL KeywordSpotter on the board.",
+    "threshold": "recall clean/noisy no lower than float minus ~1 pp, zero false wake-ups, confusables firing no more than float plus ~1 pp",
+    "measured": "float: 96.5% / 87.1% recall, 0 false wake-ups in 4.1 h, confusables 5.4% / 4.6%. int16 BPU: 97.5% / 89.1% recall, 0 false wake-ups in 4.4 h, confusables 5.7% / 4.0%.",
+    "note": "Read the int16 recall as parity with float, not as an improvement over it."
+  },
+  "measured": {
+    "note": "S100P, from BCDL's KeywordSpotter on the board.",
+    "hbm_bytes": 13282784,
+    "bpu_ms_per_chunk": 2.0,
+    "chunk_ms": 160,
+    "compiler_estimate_ms": 1.19,
+    "real_time_factor_end_to_end": 0.023
+  },
+  "calibration": {
+    "shipped": "144 real streaming states: 39 clips (12 wake-word clean, 12 wake-word noisy, 8 confusables, 4 noisy speech at 10 dB, 2 at 0 dB, 1 noise-only), each cut at 20 s; every chunk of the first 8 and every 5th after -> 576 states, every 4th kept.",
+    "time": "15-33 s per state in hb_compile. Shipped build: ~50 min of calibration, 74 min for the whole compile. Rebuild from this recipe: 62 min of calibration, 95 min in all (the host was shared). 576 states would take hours.",
+    "not_tried": "zeros or random caches."
+  },
+  "rejected_builds": [
+    {
+      "name": "softplus as upstream writes it, log(1 + exp(s))",
+      "why": "exp(s) spans many orders of magnitude; the Exp quantised to cosine 0 and the whole encoder_out to cosine -0.21 against float. Rewritten to relu(s) + log(1 + exp(-|s|)), the same function with exp in (0, 1]."
+    },
+    {
+      "name": "fbank on samples scaled by 32768",
+      "why": "Runtime, not compile: sherpa-onnx feeds samples in [-1, 1]. A port that scaled them agreed with sherpa-onnx on 37 of 87 clips, with nothing in its output looking broken."
+    },
+    {
+      "name": "cache counter advanced by 4 per chunk",
+      "why": "Runtime: processed_lens (now pad_mask) counts at the embedding rate, +8 per 160 ms chunk. Counting the 4 encoder frames runs and drives encoder_out off by up to 34."
+    }
+  ],
+  "graph_rewrites": [
+    {
+      "op": "onnxsim with every batch dimension fixed to 1",
+      "result": "1212 nodes"
+    },
+    {
+      "op": "int64 processed_lens -> float pad_mask [1, 72]; 18 Where(mask, c, x) -> x*(1-m) + c*m; new_processed_lens dropped",
+      "why": "No int64 input and no boolean select on the BPU. Exact for a 0/1 mask."
+    },
+    {
+      "op": "Swoosh softplus (34) -> relu(s) + log(1 + exp(-|s|)); 30 inf guards removed",
+      "why": "See rejected_builds."
+    },
+    {
+      "op": "6 relative-position GatherElements (constant indices) -> per-query Slice + Concat on the 4-D tensor, Reshape pair removed",
+      "why": "Each index row is a contiguous run whose offset depends only on the query position."
+    },
+    {
+      "op": "10 depthwise Conv k15 p7 on 1-4 frames -> kernel cropped to the 2L-1 centre taps, pad L-1",
+      "why": "The code generator cannot lower a pad longer than its input ('invalid storage'). Exact: the cropped taps only ever multiply padding zeros."
+    }
+  ],
+  "float_verification": {
+    "encoder_out_vs_upstream_max_abs": 1.51e-4,
+    "detections_identical_to_sherpa_onnx": "87 / 87 clips (26 wake-word clean, 26 noisy, 35 confusables; sherpa-onnx fired on 50)",
+    "decoder_table_vs_onnx_max_abs": 7.63e-6,
+    "joiner_table_vs_onnx_max_abs": 3.05e-5
+  },
+  "recipe_rerun": {
+    "date": "2026-11-03",
+    "export": "From the upstream archive's ONNX: same 1321 nodes, operator counts and 425 initializers as the graph the shipped .hbm was compiled from; encoder_out and all 37 caches bit-identical (max difference 0) over 512 streaming chunks of 12 clips.",
+    "decoder_joiner_and_tokens": "byte-identical to the shipped files",
+    "check_float": "87 clips: encoder vs upstream 1.51e-4, detections 87/87 identical to sherpa-onnx",
+    "calib": "the shipped build's 39 clips in the same order: 576 states -> 144, equal to the shipped set within 7.3e-5 (the shipped set came from an earlier, float-equivalent revision of the rewrites)",
+    "plain_hb_compile": "still segfaults (exit 139) on the final graph with calibration skipped; hbc.py required",
+    "compile": "compile.sh with all 144 states, all-int16: compiled. 62 min calibration, 95 min total, 13288088 bytes (shipped 13282784), compiler latency estimate 1.19 ms (same), compiler encoder_out cosine 0.948916 (shipped 0.958986).",
+    "bc_streaming_87_clips": "host .bc, caches fed back: per-frame cosine vs float 0.9926 rebuild / 0.9929 shipped; whole-clip mean 0.9278 / 0.9289; detections identical to float 86/87 each (shipped misses one noisy wake word float finds; rebuild finds one float misses).",
+    "not_done": "the rebuilt .hbm was not run on the board; board numbers are the shipped build's. Layer B not measured."
+  },
+  "status": "complete — calibrated rebuild from this recipe compiled and matches the shipped build on the host; board figures are from the shipped build"
+}

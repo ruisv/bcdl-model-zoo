@@ -1,0 +1,98 @@
+{
+  "model": "silero_vad_16k_int16_nashm",
+  "upstream": "Silero VAD v6.2.3 (snakers4/silero-vad); weights from silero_vad_op18_ifless.onnx as installed by `pip install silero-vad==6.2.3` (silero_vad/data/). NOT silero_vad_16k.safetensors from the same package: it holds older weights (up to ~0.5 probability difference on the same audio).",
+  "input_shape": "mag 1x129x4, h 1x128, c 1x128",
+  "input_note": "mag is the CPU STFT of one 512-sample chunk at 16 kHz: [64 samples of previous context | 512 | 64 reflected, edge excluded] -> 4 frames of 256, hop 128, periodic Hann, |rfft| (bins x frames). h, c are the previous call's h_out, c_out (zeros after a reset). All three are `featuremap` / `no_preprocess`.",
+  "outputs": {
+    "prob": "1x1 speech probability for the chunk",
+    "h_out": "1x128 LSTM hidden state, fed back as h",
+    "c_out": "1x128 LSTM cell state, fed back as c"
+  },
+  "quantisation": "set_all_nodes_int16, calibration_type max, max_percentile 0.99995 (pinned; the default search can pick kl, see rejected_builds).",
+  "march": "nash-m",
+  "licence": {
+    "tier": "Redistributable, including commercially",
+    "detail": "MIT for the code and for the published weights (the ONNX release this build is converted from). The training data is not disclosed, so there is no data chain to inherit a restriction from. Calibration data (AISHELL-1, Apache-2.0; MUSAN, CC BY 4.0) only sets quantisation thresholds and is not distributed.",
+    "redistributable": true,
+    "commercial": true,
+    "reviewed": "2026-11-03"
+  },
+  "toolchain": {
+    "openexplorer": "3.7.0",
+    "hbdk": "4.7.5",
+    "board_system": "4.0.5",
+    "note": "The host HBDK and the board HBRT must match; 3.7.0 host pairs with 4.0.5 board."
+  },
+  "cosine": {
+    "A": null,
+    "B": null,
+    "C": null,
+    "compiler_table": {"prob": 1.0, "h_out": 0.92486, "c_out": 0.959777},
+    "compiler_table_shipped": {"prob": 1.0, "h_out": 0.999821, "c_out": 0.999856},
+    "all_calibration_samples_median": {"h_out": 0.999796, "c_out": 0.999987},
+    "note": "Single-tensor cosines are the wrong gate for this model, in three ways. (1) prob is one number, and the cosine of a one-element vector is 1 whatever its value: it read 1.0 on the broken whole-graph build too. (2) hb_compile's closing table is computed on calibration sample 0 only — measured by running the .bc and the float ONNX on every sample, sample 0 reproduces the printed figures. This recipe's sample 0 is near-silent and reads 0.925; the median over all 247 samples is 0.9998, and the shipped build's printed 0.9998 hides a worst sample of 0.936. (3) The state is fed back 31 times a second, so a per-step figure is not end to end. The gate is the streaming check in task_metric."
+  },
+  "task_metric": {
+    "name": "streaming probability agreement with float, then VAD metrics on noisy sessions",
+    "protocol": "Host: run the quantised .bc and the float ONNX over whole held-out recordings chunk by chunk with each one's own state carried; compare per-chunk probabilities (mean / p99 |dp|, share of chunks on the same side of 0.5). Board (BCDL): 100 sessions of ~30 s, AISHELL-1 utterances 0.3-3 s apart mixed with MUSAN noise at 10 and 0 dB SNR over the speech, plus 24 min of noise alone; BCDL's default segmenter (threshold 0.5, 250 ms to open, 300 ms to close); frame F1 at 10 ms, an utterance counts as missed when under half of it is marked speech.",
+    "threshold": "streaming: same decision at 0.5 on >= 98% of chunks and p99 |dp| no worse than the shipped build's; board: frame F1 within ~0.01 of float at both SNRs and no false speech on noise",
+    "measured_host_rebuild": "12 held-out recordings (5 sessions at 10 dB, 5 at 0 dB, 2 min of noise at the 0 dB level), 13736 chunks. This recipe: mean |dp| 0.0134, p99 0.189, same decision 98.88%. Shipped: 0.0146, 0.240, 98.42%. This recipe under calibration_type default (kl chosen): 0.0189, 0.480, 98.01%.",
+    "measured_board_shipped": "frame F1 0.924 / 0.863 at 10 / 0 dB (float 0.929 / 0.870); utterances missed 3.4% / 13.2% (float 2.3% / 11.5%); end of speech declared a median 0.36 s after it ends at 10 dB (float 0.36 s); 0 s of false speech in 24 min of noise (float 0). From BCDL's evaluation of the shipped build."
+  },
+  "measured": {
+    "note": "Board figures are BCDL's measurements of the shipped build on an S100P; the rebuild here was not run on the board.",
+    "hbm_bytes": 1006536,
+    "latency_ms": 0.28,
+    "latency_note": "BPU time per call, hrt_model_exec",
+    "end_to_end_ms": 0.39,
+    "end_to_end_note": "per 512-sample chunk including the CPU STFT and Python; 1.2% of real time",
+    "cosine_vs_fp32": null
+  },
+  "rejected_builds": [
+    {
+      "name": "whole graph, STFT inside (export.py --whole), int16",
+      "why": "The STFT is a strided conv followed by sqrt(re^2 + im^2). The squared terms span ~5000 (Sqrt input threshold 5025), int16 resolves that in steps of ~0.15 and every quiet bin rounds away: the im^2 Mul has quantised cosine 0.0 in the compiler table, state outputs h_out 0.989 / c_out 0.995 (sample 0). Fed back every 32 ms, the error compounds; on the board the speech probability sagged to 0.16-0.5 in the middle of sentences. Compiles cleanly, prob cosine 1.0."
+    },
+    {
+      "name": "magnitude graph, int8",
+      "why": "Only 3% faster on a graph this small (909736-byte hbm). State outputs 0.958 / 0.975 in the compiler table; on the board it called 5.5 s of every minute of pure noise speech, where int16 calls none."
+    },
+    {
+      "name": "magnitude graph, int16, calibration_type default",
+      "why": "The method search picked kl on this recipe's calibration draw (max-percentile on the shipped one). kl put the spectrum input threshold at 1.8 while speech reaches 13+, so loud bins saturate. Compiles cleanly; held-out streaming p99 |dp| 0.48 against 0.19 for the same data with max-percentile pinned."
+    },
+    {
+      "name": "weights from silero_vad_16k.safetensors",
+      "why": "Older weights than the v6.2.3 ONNX/JIT release; up to ~0.5 probability difference on the same audio (0.488 measured over one 30 s noisy session)."
+    }
+  ],
+  "graph_rewrites": [
+    {
+      "op": "STFT (strided Conv1d + sqrt(re^2 + im^2)) -> CPU",
+      "why": "See rejected_builds. The BPU graph starts at the magnitude spectrum; the CPU does a 256-point FFT on 4 frames per chunk.",
+      "verified": "Recipe export vs shipped ONNX: byte-identical weights, same 30-node operator sequence, 0.0 difference in probability and state over 13736 streamed chunks. vs upstream ONNX: max |dp| 1.0e-6; vs the silero_vad package: 1.7e-6 (989 chunks)."
+    },
+    {
+      "op": "LSTM -> explicit LSTMCell arithmetic (two Gemm + gates)",
+      "why": "One step per call at a fixed shape: no Loop, no dynamic sequence length; the state is an explicit input and output."
+    }
+  ],
+  "calibration": {
+    "data": "AISHELL-1 (OpenSLR 33) utterances trimmed to speech, ~30 s sessions with 0.3-3 s gaps, mixed with MUSAN noise (OpenSLR 17) at 10 and 0 dB SNR; plus 3 min of MUSAN noise alone at the 10 dB background level. Noise clips alternate between sessions and noise-only.",
+    "samples": "real streaming states: (mag, h, c) snapshotted every 37th chunk from the float graph running over whole recordings, every third kept. Shipped: 245. Recipe re-run: 247.",
+    "note": "733 samples (no thinning) calibrated in ~20 min under the default method search with no measurable gain."
+  },
+  "rebuild": {
+    "note": "This recipe re-run end to end (export -> calib -> compile) on 2026-11-03 with OE 3.7.0 on an RTX 4090. It is not byte-identical to the shipped binary (different calibration draw), and was not run on the board.",
+    "hbm_bytes": 1006536,
+    "shipped_hbm_bytes": 1006536,
+    "calibration_samples": 247,
+    "compile_minutes": 1.3,
+    "pinned_config_on_shipped_calibration": "quant_info.json identical to the shipped build's; identical streaming results"
+  },
+  "board_verification": {
+    "note": "The shipped build (same graph, same config except the calibration method, which the search resolved to the value now pinned) is board-verified in BCDL with the task metrics above.",
+    "not_done": "The rebuilt .hbm was not run on the board. The whole-graph and int8 builds were not recompiled for this recipe; their figures are from the original conversion."
+  },
+  "status": "complete"
+}

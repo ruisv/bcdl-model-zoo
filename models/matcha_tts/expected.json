@@ -1,0 +1,157 @@
+{
+  "model": "matcha_zh_en_enc_l128_int16_nashm + matcha_zh_en_dec_t512_int16_nashm",
+  "upstream": "Matcha-TTS zh-en, ModelScope dengcunqin/matcha_tts_zh_en_20251010, pytorch_model_sherpa.bin (the checkpoint model-steps-3.onnx was exported from); model code from the PyPI matcha-tts 0.0.7.2 sdist",
+  "march": "nash-m",
+  "status": "complete. Re-run end to end on the convert host from the upstream checkpoint: frontend_ids -> export -> onnxslim -> calib -> compile, both graphs fully calibrated (61 sentences) and compiled. Both rebuilt .hbm produce output bit-identical to the shipped builds on the board. See rebuild.",
+  "artefacts": {
+    "matcha_zh_en_enc_l128_int16_nashm.hbm": "text encoder + duration predictor",
+    "matcha_zh_en_dec_t512_int16_nashm.hbm": "U-Net decoder, 3 Euler steps compiled in",
+    "matcha_zh_en_embedding.npy": "token embedding table [2190, 192] float32, already scaled by sqrt(192); the lookup runs on the CPU. Written by export.py",
+    "matcha_zh_en_tokens.txt": "tokens.txt from the sherpa-onnx packaging (matcha-icefall-zh-en), unchanged",
+    "matcha_zh_en_lexicon.txt": "lexicon.txt from the sherpa-onnx packaging (matcha-icefall-zh-en), unchanged"
+  },
+  "submodels": {
+    "encoder": {
+      "inputs": "x_emb [1,192,128] (scaled embeddings, zero past the sentence), x_mask [1,1,128]",
+      "outputs": "mu_x [1,80,128], logw [1,1,128]",
+      "config": "config_encoder.yaml"
+    },
+    "decoder": {
+      "inputs": "mu_y [1,80,512] (length-regulated mu_x, zero-padded), y_mask [1,1,512], z [1,80,512] (N(0,1) * noise_scale)",
+      "outputs": "mel [1,80,512], de-normalised log-mel, zero past the sentence",
+      "config": "config_decoder.yaml"
+    },
+    "cpu_side": "embedding lookup; durations ceil(exp(logw)) * length_scale; length regulation (repeat mu_x column i by its duration); the starting noise z. The graphs are fixed-length; the sentence length lives only in the masks."
+  },
+  "quantisation": "set_all_nodes_int16 on both graphs, measured — see rejected_builds.",
+  "licence": {
+    "tier": "redistributable per the model card, with one thing worth checking (the training data)",
+    "detail": "The ModelScope model card declares Apache-2.0; the Matcha-TTS code is MIT. The training data is not disclosed: the card says mixed Chinese-English data, fine-tuned from the same author's earlier zh-en model, which was trained with icefall's baker_zh recipe. Whether that recipe's Baker corpus (BZNSYP, non-commercial) is in the data is not stated. Check before a commercial build. tokens.txt and lexicon.txt come from the sherpa-onnx packaging of the same model.",
+    "redistributable": true,
+    "commercial": "check the training data"
+  },
+  "toolchain": {
+    "openexplorer": "3.7.0",
+    "hbdk": "4.7.5",
+    "board_system": "4.0.5",
+    "torch": "2.6.0",
+    "onnxslim": "0.1.94",
+    "python_deps": "einops, conformer==0.3.2, diffusers==0.25.0, pillow (diffusers imports it)"
+  },
+  "cosine": {
+    "A": {
+      "encoder_mu_x": {
+        "calibrated": 0.999995,
+        "quantised": 0.999994
+      },
+      "encoder_logw": {
+        "calibrated": 0.999997,
+        "quantised": 0.999996
+      },
+      "decoder_mel": {
+        "calibrated": 0.999759,
+        "quantised": 0.999781
+      }
+    },
+    "B": null,
+    "C": {
+      "encoder_min_over_19_sentences": {
+        "mu_x": 0.999978,
+        "logw": 0.999889
+      },
+      "decoder_mel_min_over_19_sentences": 0.999283,
+      "note": "board .hbm against the float ONNX, valid frames only, 19 test sentences (first 12 test texts); decoder fed the float encoder's length-regulated output and N(0,1) noise"
+    },
+    "note": "A is the compiler's own output cosine on the calibration set. B (.hbm vs .bc) was not run as such; the rebuilt .hbm was compared against the shipped .hbm on the board instead, max |diff| 0. C is the board .hbm against the float ONNX. None of these is the gate: the int8 decoder is unintelligible and two speech-quality predictors still liked it. See task_metric."
+  },
+  "float_equivalence": {
+    "note": "The fixed-length rewrite is checked in float by export.py on every export: the padded ONNX pair (encoder -> CPU length regulation -> decoder at 512 frames) against an unpadded run of the untouched PyTorch model, same noise.",
+    "padded_onnx_vs_unpadded_torch_max_abs_logmel": 8.54e-05,
+    "stock_decoder_padded_to_512_vs_unpadded_max_abs_logmel": 9.96,
+    "rebuilt_torch_vs_published_model_steps_3_onnx_max_abs": 0.000567,
+    "sentences": "29 sentences (the first 20 of the 60 test texts)"
+  },
+  "task_metric": {
+    "name": "round-trip character error rate: synthesise, transcribe with an ASR model (FireRedASR2), compare to the input text",
+    "protocol": "60 short robot-reply texts, disjoint from calib_texts.txt, token ids from sherpa-onnx's front end, vocoded with Vocos 16 kHz. Automatic MOS predictors (UTMOS, SQUIM) are NOT a substitute: they scored the unintelligible int8 decoder well.",
+    "threshold": "CER within ~0.2 points of the float model on the CPU",
+    "measured": "float on CPU (sherpa-onnx) 1.61%; int16 encoder + int16 decoder on the BPU 1.73%; int8 encoder 2.85%; int8 decoder 99.4%.",
+    "durations": "Durations are ceil(exp(logw)), so the int16 encoder does not match float frame for frame. On 19 test sentences (147 tokens), run on the board: 30 token durations differ, either tokens whose float duration sits exactly on an integer (many at 2.00; a 0.002 logw error flips ceil by one) or long pause/punctuation tokens of 8-58 frames, where a 1-2% logw error is 1-3 frames (+2 on a 16-frame token, -3 on a 55-frame one). Median |dlogw| 0.005. No sentence's total length moved by more than 2 frames. The round-trip CER is the evidence this is inaudible. Compare mels per token segment, not frame for frame."
+  },
+  "measured": {
+    "note": "S100P, BCDL MatchaAcoustic / TextToSpeech, the shipped builds.",
+    "encoder": {
+      "hbm_bytes": 10736712,
+      "latency_ms": 1.2
+    },
+    "decoder": {
+      "hbm_bytes": 33780384,
+      "latency_ms": 8.2
+    },
+    "end_to_end_ms_per_sentence": 26,
+    "end_to_end_note": "with the Vocos vocoder on the BPU too; 58 ms for the slowest text (two sentences). Real-time factor 0.0070, or 0.0092 with pauses >= 0.2 s shortened to 0.2x as sherpa-onnx does (less audio for the same work)."
+  },
+  "rejected_builds": [
+    {
+      "name": "int8 decoder",
+      "why": "Unintelligible: round-trip CER 99.4%. Mel peaks squashed from ~5.2 to ~3.0; 1378 of 2052 nodes under 0.95 per-layer cosine, attention and feed-forward collapsing to zero or negative; three Euler steps feed the estimator its own output so the error compounds, and mixed precision would have to keep most of it at int16. UTMOS 3.26 and SQUIM 3.97 — both predictors rated it well. Would have saved 8.17 -> 4.78 ms."
+    },
+    {
+      "name": "int8 encoder",
+      "why": "Round-trip CER 2.85% against 1.73%, every extra error a swallowed or doubled character: a small logw error moves ceil(exp(logw)) by a whole frame. Would have saved 1.22 -> 0.85 ms."
+    },
+    {
+      "name": "encoder with token ids as the input",
+      "why": "The compiler quantises a float id input like an activation; it chose a threshold of 127 for a 2190-entry vocabulary, and logw came out at cosine 0.83. The embedding lookup moved to the CPU."
+    },
+    {
+      "name": "stock fixed-length decoder export",
+      "why": "GroupNorm statistics and the additive 0/1 attention mask both depend on the amount of padding, so a 512-frame graph differs from the model by up to 9.96 in log-mel while passing a 'padding content does not matter' check."
+    }
+  ],
+  "graph_rewrites": [
+    {
+      "op": "decoder GroupNorm -> GroupNorm over the valid frames only (ceil4(F) at full rate, halved per U-Net level)",
+      "why": "nn.GroupNorm normalises over the whole time axis; the padding's conv outputs are not zero, so the statistics depend on how much padding there is."
+    },
+    {
+      "op": "decoder attention mask -> bias = mask + (nm - 1) * 100",
+      "why": "scaled_dot_product_attention ADDS a float mask: +1 on valid keys, +0 on padded ones. The bias keeps that over the frames the unpadded model has and excludes the rest."
+    },
+    {
+      "op": "mask upsampling with expand + reshape, not repeat_interleave",
+      "why": "With repeat_interleave twice in one graph, torch.onnx tracing froze the attention Reshape at a sequence length of 2."
+    },
+    {
+      "op": "embedding lookup out of the encoder graph",
+      "why": "Token ids cannot be a float graph input; see rejected_builds."
+    },
+    {
+      "op": "3 Euler steps and mel de-normalisation inside the decoder graph",
+      "why": "One BPU call per sentence instead of three; the step count is fixed (model-steps-3)."
+    }
+  ],
+  "rebuild": {
+    "note": "This recipe re-run end to end on 2026-11-04, OE 3.7.0, in a fresh directory, from pytorch_model_sherpa.bin and the PyPI matcha-tts 0.0.7.2 sdist (byte-identical to the archive the shipped build used), with the in-memory import shims instead of patched sources and freshly installed deps.",
+    "token_ids": "frontend_ids.py reproduced the ids of the original build exactly, for calib_texts.txt (40 texts, 61 sentences) and the 60 test texts (94 sentences).",
+    "onnx": "Both slimmed graphs give max |diff| 0.0 against the shipped build's ONNX on all 94 test sentences (encoder outputs and decoder mel).",
+    "embedding": "matcha_zh_en_embedding.npy byte-identical to the shipped file (md5 9596ac2aee04c2eb4777bd56ce6bf8f1).",
+    "float_check": "padded ONNX pair vs unpadded torch 8.54e-05; stock decoder padded to 512: 9.96; rebuilt torch vs published model-steps-3.onnx 5.67e-04.",
+    "calibration": "All five directories value-identical to the shipped build's calibration set (max |diff| 0.0, 61 samples each); pack() writes them with an extra leading axis, which hb_compile accepts (it reshapes by element count). Both graphs fail batch-8 calibration on a batch-1 Reshape and drop to batch 1, as the shipped build did.",
+    "encoder": {
+      "hbm_bytes": 10736712,
+      "shipped_hbm_bytes": 10736712,
+      "quant_info": "byte-identical to the shipped build",
+      "board": "max |rebuilt - shipped| = 0 on 19 sentences",
+      "compile_minutes": 18.5
+    },
+    "decoder": {
+      "hbm_bytes": 33761184,
+      "shipped_hbm_bytes": 33780384,
+      "quant_info": "same 2098 thresholds as the shipped build; 202 nodes carry different names (X vs X_output_0) because the shipped decoder ONNX came from an earlier export run, and every node present under the same name has the same threshold",
+      "board": "max |rebuilt - shipped| = 0 on 19 sentences, although the .hbm differs in size",
+      "compile_minutes": 92
+    },
+    "timing_note": "Both compiles shared one GPU with two other hb_compile jobs. Uncontended, the shipped build took ~10 min (encoder) and ~70 min (decoder: 19 min calibrating, 47 compiling)."
+  }
+}

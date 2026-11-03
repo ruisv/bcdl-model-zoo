@@ -239,8 +239,15 @@ same boxes) rather than bitwise equality. A 2e-4 logit drift that leaves the
 argmax unchanged is a pass; a stride bug is not, and the two are not hard to
 tell apart — the stride bug collapses the cosine, this does not.
 
-hb_compile prints a per-output cosine at the end of calibration, which is
-layer A for free.
+hb_compile prints a per-output cosine at the end of calibration. **It is not
+layer A: it is computed on the first calibration sample alone.** Running the
+compiled `.bc` against the ONNX on every calibration sample reproduces the
+printed figure from sample 0 to three decimals and no other. The Silero VAD
+recipe shows both ways it misleads: a build printed 0.925 for a state whose
+median over all samples is 0.9998, and a build printing 0.9998 had a worst
+sample at 0.936. An output that is a single number (a probability) always
+prints 1.0. Use the printout as a smoke test; compute layer A yourself over many
+inputs with `common/verify_cosine.py`.
 
 **Where a task metric exists, cosine is not sufficient** — see OSNet above.
 Declare the task metric in `expected.json` and measure it.
@@ -281,6 +288,28 @@ calibration (a 5-D attention Squeeze that onnxslim did not resolve for the wider
 correctly on the board. Errors in the log are a prompt to **go verify on the
 board**, not an automatic reject. The gate is `expected.json` and a board run,
 never the presence or absence of compile-time messages.
+
+**`calibration_type: default` is a search, and it can pick the wrong answer.**
+It tries several methods and keeps one per tensor. For Silero VAD on a fresh
+calibration set it chose KL for the spectrum input and set its threshold at 1.8
+against speech that reaches 13: every loud bin saturated, the model compiled
+cleanly, and the worst-case error doubled. Where an input has a long, heavy tail
+(spectra, unnormalised features), pin the method — `calibration_type: max` with
+`max_percentile` — and check `quant_info.json` for the input thresholds.
+
+**A `.bc` reuses its output buffers between calls.** The arrays returned by one
+call are overwritten by the next. A loop that keeps them without copying —
+every streaming model, where outputs are fed back as state — scores a correct
+build as broken (one KWS comparison read 0.56 per-frame cosine until the outputs
+were copied). `common/infer_bc.py` makes one call per process and is not
+affected; anything that loops must copy.
+
+**Streaming models calibrate on real states.** A model that carries state
+between calls (an LSTM, attention caches) sees that state as an input. Zero
+states describe only the first call of a stream; calibrate on the states the
+float model actually produces when run chunk by chunk over real audio — and, if
+the graph takes a mask that is partly filled at the start of a stream, include
+those early chunks. The KWS and VAD recipes do this in their `calib.py`.
 
 **The file name is which build it is.** `_cut`, `_v3`, `_aligned`, `_qat`,
 `_crop` are not decoration. Keep the file name matching the model name inside

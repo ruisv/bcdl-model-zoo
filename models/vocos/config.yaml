@@ -1,0 +1,28 @@
+# Vocos 16 kHz vocoder (Matcha-TTS zh-en), 80 mels x 256 frames, ALL-INT16.
+#
+# The graph is the published Vocos cut at the head's linear output (export.py):
+# the BPU returns log-magnitude and raw phase, and exp / clip / cos / sin and
+# the iSTFT run on the CPU. The int16 directive is measured, not cautious: int8
+# leaves half the audible time-frequency cells more than 3 dB off float, and
+# int16 only on the last ConvNeXt block + final norm + head still leaves 40% —
+# the error builds up over all eight blocks. See README.md.
+#
+# One `featuremap` input with `no_preprocess`: log-mel values go in as they are,
+# so the calibration windows (calib.py) are raw mels too.
+model_parameters:
+  onnx_model: "vocos16k_t256_head.onnx"
+  march: "nash-m"
+  working_dir: "./out"
+  output_model_file_prefix: "vocos_16k_t256_int16_nashm"
+input_parameters:
+  input_name: "mels"
+  input_type_rt: "featuremap"
+  input_type_train: "featuremap"
+  norm_type: "no_preprocess"
+calibration_parameters:
+  cal_data_dir: "/ws/cal/mels"
+  calibration_type: "default"
+  optimization: "set_all_nodes_int16"
+compiler_parameters:
+  optimize_level: "O2"
+  compile_mode: "latency"

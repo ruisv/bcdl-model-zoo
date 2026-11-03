@@ -1,0 +1,29 @@
+# Matcha-TTS zh-en U-Net decoder, 512 frames, 3 Euler steps compiled in, ALL-INT16.
+#
+# int16 is not a precaution. The int8 build is unintelligible — round-trip CER
+# 99.4% against 1.73% — with mel peaks squashed from ~5.2 to ~3.0 and 1378 of
+# 2052 nodes under 0.95 per-layer cosine, attention and feed-forward collapsing
+# to zero or negative. Three Euler steps feed the estimator its own output, so
+# the error compounds. Two automatic speech-quality scores (UTMOS, SQUIM) still
+# rated it well. See README.md.
+#
+# Three `featuremap` inputs with `no_preprocess`, matched positionally with
+# the three calibration directories.
+model_parameters:
+  onnx_model: "matcha_dec_T512_slim.onnx"
+  march: "nash-m"
+  working_dir: "./out_decoder"
+  output_model_file_prefix: "matcha_zh_en_dec_t512_int16_nashm"
+input_parameters:
+  input_name: "mu_y;y_mask;z"
+  input_type_rt: "featuremap;featuremap;featuremap"
+  input_type_train: "featuremap;featuremap;featuremap"
+  norm_type: "no_preprocess;no_preprocess;no_preprocess"
+calibration_parameters:
+  cal_data_dir: "/ws/cal/decoder/mu_y;/ws/cal/decoder/y_mask;/ws/cal/decoder/z"
+  cal_data_type: "float32;float32;float32"
+  calibration_type: "default"
+  optimization: "set_all_nodes_int16"
+compiler_parameters:
+  optimize_level: "O2"
+  compile_mode: "latency"

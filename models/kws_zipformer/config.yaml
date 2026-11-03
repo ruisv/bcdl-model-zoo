@@ -1,0 +1,35 @@
+# sherpa-onnx KWS zipformer2 zh-en 3M, streaming encoder, 160 ms chunk, ALL-INT16.
+#
+# 39 inputs, all `featuremap` / `no_preprocess`: the fbank window `x` [1, 29, 80],
+# 37 caches the previous call wrote, and `pad_mask` [1, 72] (1 = cache slot not
+# yet filled), which replaced upstream's int64 processed_lens in export.py. The
+# 38 outputs are encoder_out [1, 4, 320] plus a new_<name> for every cache.
+#
+# All-int16 is the shipped build: an attention stack whose recall matched float
+# on the board at 2.0 ms per 160 ms chunk. int8 was not built for this model;
+# at that latency there was no reason to try.
+#
+# Calibration data must be real streaming states (calib.py), one directory per
+# input, matched positionally with input_name. No cal_data_type: the toolchain
+# reads .npy and reshapes each file to the input's shape.
+#
+# Compile through hbc.py (compile.sh does), not hb_compile directly: one of the
+# optimiser's checks crashes onnxruntime on this graph. See hbc.py.
+model_parameters:
+  onnx_model: "kws_zipformer_zh_en_3m_c16_bpu.onnx"
+  march: "nash-m"
+  working_dir: "./out"
+  output_model_file_prefix: "kws_zipformer_zh_en_3m_c16_int16_nashm"
+input_parameters:
+  input_name: "x;cached_key_0;cached_nonlin_attn_0;cached_val1_0;cached_val2_0;cached_conv1_0;cached_conv2_0;cached_key_1;cached_nonlin_attn_1;cached_val1_1;cached_val2_1;cached_conv1_1;cached_conv2_1;cached_key_2;cached_nonlin_attn_2;cached_val1_2;cached_val2_2;cached_conv1_2;cached_conv2_2;cached_key_3;cached_nonlin_attn_3;cached_val1_3;cached_val2_3;cached_conv1_3;cached_conv2_3;cached_key_4;cached_nonlin_attn_4;cached_val1_4;cached_val2_4;cached_conv1_4;cached_conv2_4;cached_key_5;cached_nonlin_attn_5;cached_val1_5;cached_val2_5;cached_conv1_5;cached_conv2_5;embed_states;pad_mask"
+  input_type_rt: "featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap"
+  input_type_train: "featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap;featuremap"
+  norm_type: "no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess;no_preprocess"
+calibration_parameters:
+  cal_data_dir: "/ws/cal/x;/ws/cal/cached_key_0;/ws/cal/cached_nonlin_attn_0;/ws/cal/cached_val1_0;/ws/cal/cached_val2_0;/ws/cal/cached_conv1_0;/ws/cal/cached_conv2_0;/ws/cal/cached_key_1;/ws/cal/cached_nonlin_attn_1;/ws/cal/cached_val1_1;/ws/cal/cached_val2_1;/ws/cal/cached_conv1_1;/ws/cal/cached_conv2_1;/ws/cal/cached_key_2;/ws/cal/cached_nonlin_attn_2;/ws/cal/cached_val1_2;/ws/cal/cached_val2_2;/ws/cal/cached_conv1_2;/ws/cal/cached_conv2_2;/ws/cal/cached_key_3;/ws/cal/cached_nonlin_attn_3;/ws/cal/cached_val1_3;/ws/cal/cached_val2_3;/ws/cal/cached_conv1_3;/ws/cal/cached_conv2_3;/ws/cal/cached_key_4;/ws/cal/cached_nonlin_attn_4;/ws/cal/cached_val1_4;/ws/cal/cached_val2_4;/ws/cal/cached_conv1_4;/ws/cal/cached_conv2_4;/ws/cal/cached_key_5;/ws/cal/cached_nonlin_attn_5;/ws/cal/cached_val1_5;/ws/cal/cached_val2_5;/ws/cal/cached_conv1_5;/ws/cal/cached_conv2_5;/ws/cal/embed_states;/ws/cal/pad_mask"
+  calibration_type: "default"
+  optimization: "set_all_nodes_int16"
+compiler_parameters:
+  optimize_level: "O2"
+  compile_mode: "latency"
+  jobs: 16

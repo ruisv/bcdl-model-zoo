@@ -32,12 +32,12 @@ silence is not permission.
 
 | what you may do with the `.hbm` | models |
 |---|---|
-| **Redistribute, including commercially** | PP-OCRv6/v5 det·cls·rec (Apache-2.0 on code and every model card) · XFeat (weights committed in the Apache-2.0 repo) · Real-ESRGAN Compact (BSD-3, weights released by the copyright holder) · LingBot-Depth (Apache-2.0 on code and weights) · Depth-Anything-V2 **Small** |
+| **Redistribute, including commercially** | PP-OCRv6/v5 det·cls·rec (Apache-2.0 on code and every model card) · XFeat (weights committed in the Apache-2.0 repo) · Real-ESRGAN Compact (BSD-3, weights released by the copyright holder) · LingBot-Depth (Apache-2.0 on code and weights) · Depth-Anything-V2 **Small** · Silero VAD v6.2.3 (MIT on code and the published weights) |
 | **Redistribute, but non-commercial** | GLASS — MIT code and weights, but the checkpoint is trained on **MVTec AD (CC BY-NC-SA 4.0)**, so a redistributed build carries the same terms including **share-alike**. Does not reach a deployment retrained on your own parts · ViTPose-S — Apache-2.0 code, but the checkpoint is fine-tuned from **MAE (CC-BY-NC-4.0)** and trained on COCO-WholeBody · PIDNet-S — MIT code, but **Cityscapes** permits distributing trained models and bars commercial use of them in the same breath · YOLOP — MIT code and in-repo weights, but **BDD100K** limits commercial use to member organizations |
-| **Redistributable, with one thing worth checking** | LAS2 — MIT on code and weights, but the release was distilled from FoundationStereo, whose NVIDIA licence is research-only. That is upstream's compliance question rather than a term passed down · SPAN — Apache-2.0 by project statement, but the checkpoints ship from a separate file host with no terms attached to the artefact |
+| **Redistributable, with one thing worth checking** | Matcha-TTS zh-en — the model card declares Apache-2.0, but the training data is not disclosed and the author's earlier zh-en model was trained with a recipe built on the Baker corpus (BZNSYP, non-commercial); whether it is in this one is not stated · Vocos 16 kHz — Apache-2.0 card, training data undisclosed · LAS2 — MIT on code and weights, but the release was distilled from FoundationStereo, whose NVIDIA licence is research-only. That is upstream's compliance question rather than a term passed down · SPAN — Apache-2.0 by project statement, but the checkpoints ship from a separate file host with no terms attached to the artefact |
 | **Recipe only — copyleft** | YOLO26 / YOLOv8 / YOLOE (Ultralytics) — **AGPL-3.0**; commercial use needs Ultralytics' Enterprise licence |
 | **Recipe only — non-commercial weights** | SCRFD / ArcFace (insightface) · Depth-Anything-V2 **Base and up**; for a commercial build see the alternatives noted per model · PointPillars — Apache-2.0 code (OpenPCDet) but the checkpoint is **KITTI**-trained, and KITTI is CC BY-NC-SA |
-| **Unresolved — do not redistribute yet** | NeuFlow v2 — Apache-2.0 code with the weights committed in the same repo, but trained on **FlyingThings3D**, whose terms are research-only and **silent about models trained on the data**. Silence is not permission · EdgeSAM (terms not reviewed) · OSNet — MIT code, but every ReID-useful checkpoint is trained on MSMT17 / Market-1501 under academic-only agreements and no upstream source says whether that reaches the weights |
+| **Unresolved — do not redistribute yet** | sherpa-onnx KWS zipformer zh-en 3M — sherpa-onnx is Apache-2.0, but the model ships as a release archive with no model-specific licence and nothing says what the zh-en model was trained on (its Chinese-only sibling is WenetSpeech) · NeuFlow v2 — Apache-2.0 code with the weights committed in the same repo, but trained on **FlyingThings3D**, whose terms are research-only and **silent about models trained on the data**. Silence is not permission · EdgeSAM (terms not reviewed) · OSNet — MIT code, but every ReID-useful checkpoint is trained on MSMT17 / Market-1501 under academic-only agreements and no upstream source says whether that reaches the weights |
 
 ## Prebuilt `.hbm` on Hugging Face
 
@@ -59,6 +59,22 @@ and no x86 host can skip all of this:
 | [`ruisv/bcdl-yolop`](https://huggingface.co/ruisv/bcdl-yolop) | [`yolop`](models/yolop/) | **non-commercial** |
 
 BCDL's `scripts/fetch_models.sh` pulls these automatically.
+
+**The speech models are not hosted yet** — wake word
+([`kws_zipformer`](models/kws_zipformer/)), VAD ([`silero_vad`](models/silero_vad/)),
+and the TTS pair ([`matcha_tts`](models/matcha_tts/) + [`vocos`](models/vocos/)).
+Build them here, then point BCDL's fetch script at the output directories and
+it installs them under the names BCDL expects:
+
+```bash
+BCDL_SRC_KWS=/path/to/kws_build BCDL_SRC_VAD=/path/to/vad_build \
+BCDL_SRC_MATCHA=/path/to/matcha_build BCDL_SRC_VOCOS=/path/to/vocos_build \
+  scripts/fetch_models.sh
+```
+
+Each recipe's README lists exactly which files it produces. The speech
+recogniser BCDL uses (Paraformer) needs no recipe: it is D-Robotics' own
+prebuilt build, and the fetch script downloads it.
 
 **The rows missing from that table are the point of the licence table above**:
 the Ultralytics builds are AGPL, the face models and PointPillars carry
@@ -113,9 +129,12 @@ metric in `expected.json` too.
 ## Status
 
 Every converted model in BCDL's catalogue now has a recipe. **A recipe being
-present does not mean it has been re-run** — seven are board-verified end to end
-(`complete`), the rest reconstruct the method faithfully from the original
-conversion work (`recipe`). Each model's README states exactly how far it got, and
+present does not mean it has been re-run** — eleven are `complete`, the rest
+reconstruct the method faithfully from the original conversion work (`recipe`).
+Of the `complete` ones, seven were board-verified end to end from the recipe;
+the four speech recipes were re-run from upstream to a compiled model and
+checked against the shipped, board-measured builds — Matcha-TTS on the board
+itself, the other three on the host. Each model's README states exactly how far it got, and
 `expected.json` distinguishes gates from measurements — where no board numbers
 survived, the measured fields are `null` on purpose, never invented.
 
@@ -139,10 +158,15 @@ survived, the measured fields are `null` on purpose, never invented.
 | [`lingbot_depth`](models/lingbot_depth/) — RGB-D depth refinement | complete | compiled and **board-verified** (C 0.989, absrel 2.92%, mask IoU 0.959). The upstream graph is not compilable as written — it drops depth tokens by validity, so the sequence length depends on the data; the rewrite is **bit-identical** to upstream with that masking off. int8 collapses the output's dynamic range (233% absrel) and the per-layer report **predicted it**. **DDR-bound at 1457 ms**, with a measured token-budget/accuracy curve for trading it down |
 | [`glass`](models/glass/) — industrial anomaly detection | complete | compiled and **board-verified** on MVTec-AD `bottle` with pixel ground truth: image and pixel AUROC both **0.9905, matching float — at an output cosine of 0.9409**. AUROC is rank-based, so quantisation noise that moves every score without reordering them costs nothing. Read against `neuflow` below, where 0.9954 hid an unusable model. Backbone is a **frozen** WideResNet-50 with two ~16 MB per-product heads, so "retrain for your part" is realistic. **MVTec AD is CC BY-NC-SA — redistributable, non-commercial, share-alike** |
 | [`neuflow`](models/neuflow/) — optical flow | complete | compiled and **board-verified** with ground truth *synthesised* (shift an image by a known number of pixels). int8 becomes a **flat ~1.9 px noise floor** — 2 px and 16 px displacements return the same error — while the compiler reports **0.9954**; int16 gets back to 0.055–0.081 px. Export needs three things copied from upstream's `infer.py` or the graph is silently wrong. **FlyingThings3D is research-only and says nothing about trained models — recipe only, no binary** |
+| [`kws_zipformer`](models/kws_zipformer/) — wake words | complete | sherpa-onnx's open-vocabulary zipformer2 KWS (zh-en, 3M); only the streaming encoder goes to the BPU. **Four rewrites** before it compiles or means anything: the int64 `processed_lens` becomes a float mask; Swoosh's `log(1+exp(s))` quantised as written takes the encoder to **cosine −0.21**; six relative-position `GatherElements` become slices; ten depthwise convs padded longer than their input stop the code generator. One optimizer pass crashes onnxruntime on the graph and is switched off by a wrapper. Rebuild: encoder bit-identical to the shipped ONNX, detections match sherpa-onnx in float on 87/87 and float on 86/87 after int16 (as the shipped build). **Licence unresolved — recipe only** |
+| [`silero_vad`](models/silero_vad/) — voice activity | complete | the STFT has to come out of the graph: squared on the BPU, the power spans ~5000 and int16 loses every quiet bin. **The default calibration search is the second trap**: on a fresh set it picked KL and clipped the spectrum input at 1.8 against speech that reaches 13 — compiles clean, twice the worst-case error; the config pins `max`. The package's `safetensors` holds older weights than its ONNX. Also shows that **`hb_compile`'s printed output cosine is computed on calibration sample 0 alone** |
+| [`matcha_tts`](models/matcha_tts/) — TTS acoustic model | complete | rebuilt and **board-verified: output identical to the shipped builds** (max diff 0 on 19 sentences). A fixed-length export of stock Matcha is not the model: GroupNorm and an *added* 0/1 attention mask both depend on how much padding there is (log-mel off by up to **9.96**); rewritten to 8.5e-5. Token ids cannot be a graph input (the compiler quantised them to a range of 127 for 2190 ids); the embedding lookup moves to the CPU. int8 decoder: **99% CER** while UTMOS still scores it well |
+| [`vocos`](models/vocos/) — TTS vocoder | complete | cut at the head's log-magnitude and phase: compiled as published, the quantised `cos`/`sin` take the phase to cosine 0.58 (int8) / 0.97–0.99 (int16). Rebuild matches the shipped ONNX exactly and scores **0.53 dB** audible-cell spectral distance (shipped 0.54). int8 is 5.4 dB and mixed precision 4.5 dB — the error builds up over all eight blocks |
 
 Every model here is one BCDL has a decoder for and has run on the board. Not in
 this repo, by design: the **download-only** entries in BCDL's catalogue (Depth-
-Anything-V2, SigLIP, DeepLabV3+, YOLOv8, the YOLO26n zoo builds) — their "recipe"
+Anything-V2, SigLIP, DeepLabV3+, YOLOv8, the YOLO26n zoo builds, D-Robotics'
+Paraformer speech recogniser) — their "recipe"
 is a URL, so they live in BCDL's `fetch_models.sh`, not here — and the
 exploratory conversions with no BCDL decoder (dinov3, rf-detr, rt-detr, rtmpose,
 mono3d), which would ship a recipe with no end-to-end path to validate it.

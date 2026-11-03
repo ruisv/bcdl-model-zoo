@@ -1,0 +1,38 @@
+# Silero VAD v6.2.3, 16 kHz, one 32 ms streaming step, ALL-INT16.
+#
+# The graph starts at the MAGNITUDE spectrum: the STFT runs on the CPU. Compiled
+# with the STFT inside, the squared real/imaginary parts span ~5000, int16 loses
+# every quiet bin, the fed-back LSTM state drifts (cosine 0.989 per step) and
+# the speech probability sags to 0.16-0.5 mid-sentence. See README.md.
+#
+# int16 rather than int8 because of the noise-only case: int8 calls 5.5 s of
+# every minute of pure noise speech, for 3% less latency.
+#
+# Three featuremap inputs, no normalisation: mag [1,129,4], h [1,128],
+# c [1,128]. The calibration directories are positionally matched — sample i in
+# each is one real (spectrum, state) pair taken from a running stream.
+model_parameters:
+  onnx_model: "silero_vad_16k_mag_slim.onnx"
+  march: "nash-m"
+  working_dir: "./out"
+  output_model_file_prefix: "silero_vad_16k_int16_nashm"
+input_parameters:
+  input_name: "mag;h;c"
+  input_type_rt: "featuremap;featuremap;featuremap"
+  input_type_train: "featuremap;featuremap;featuremap"
+  norm_type: "no_preprocess;no_preprocess;no_preprocess"
+calibration_parameters:
+  cal_data_dir: "/ws/cal/mag;/ws/cal/h;/ws/cal/c"
+  cal_data_type: "float32;float32;float32"
+  # NOT "default". The default search tries max-percentile and kl and keeps one;
+  # on the shipped calibration set it kept max-percentile 0.99995, on another
+  # draw of this same recipe it kept kl, which clipped the spectrum input at 1.8
+  # (speech reaches 13+) and doubled the 99th-percentile probability error on
+  # held-out streams. Pinned to what the shipped build used; with the shipped
+  # calibration set this reproduces its quantisation thresholds exactly.
+  calibration_type: "max"
+  max_percentile: 0.99995
+  optimization: "set_all_nodes_int16"
+compiler_parameters:
+  optimize_level: "O2"
+  compile_mode: "latency"
